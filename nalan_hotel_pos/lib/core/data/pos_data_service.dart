@@ -81,7 +81,9 @@ class PosDataService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> getMenu({bool availableOnly = false}) async {
+  Future<List<Map<String, dynamic>>> getMenu({
+    bool availableOnly = false,
+  }) async {
     try {
       if (isCloudMode) {
         final response = await ApiClient().dio.get(
@@ -176,7 +178,11 @@ class PosDataService {
                 .toList();
         final response = await ApiClient().dio.post(
           ApiEndpoints.bills,
-          data: {'items': payloadItems, 'discount_amount': 0, 'discount_percent': 0},
+          data: {
+            'items': payloadItems,
+            'discount_amount': 0,
+            'discount_percent': 0,
+          },
         );
         return Map<String, dynamic>.from(response.data as Map);
       }
@@ -333,6 +339,33 @@ class PosDataService {
       );
     } catch (error) {
       throw _error(error, fallback: 'Failed to generate UPI QR');
+    }
+  }
+
+  Future<Map<String, dynamic>> initiateSplitPayment(
+    int billId, {
+    required double cashAmount,
+    required int upiAccountId,
+  }) async {
+    try {
+      if (isCloudMode) {
+        final response = await ApiClient().dio.post(
+          ApiEndpoints.initiatePayment(billId),
+          queryParameters: {
+            'payment_type': 'SPLIT',
+            'upi_account_id': upiAccountId,
+          },
+          data: {'cash_amount': cashAmount},
+        );
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+      return OfflinePosStore.instance.initiateSplitPayment(
+        billId,
+        cashAmount: cashAmount,
+        upiAccountId: upiAccountId,
+      );
+    } catch (error) {
+      throw _error(error, fallback: 'Failed to start split payment');
     }
   }
 

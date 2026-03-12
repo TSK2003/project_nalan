@@ -288,10 +288,7 @@ class OfflinePosStore {
     );
     final bill = <String, dynamic>{
       'id': state['next_bill_id'] as int,
-      'bill_number': _buildBillNumber(
-        state['next_bill_sequence'] as int,
-        now,
-      ),
+      'bill_number': _buildBillNumber(state['next_bill_sequence'] as int, now),
       'created_at': now.toIso8601String(),
       'updated_at': now.toIso8601String(),
       'status': 'PENDING_PAYMENT',
@@ -357,9 +354,10 @@ class OfflinePosStore {
 
   Future<List<Map<String, dynamic>>> listUpiAccounts() async {
     final state = await _loadState();
-    final accounts = List<Map<String, dynamic>>.from(
-      state['upi_accounts'] as List,
-    ).where((account) => account['is_active'] == true).toList();
+    final accounts =
+        List<Map<String, dynamic>>.from(
+          state['upi_accounts'] as List,
+        ).where((account) => account['is_active'] == true).toList();
     accounts.sort((a, b) {
       final aDefault = a['is_default'] == true ? 0 : 1;
       final bDefault = b['is_default'] == true ? 0 : 1;
@@ -395,13 +393,17 @@ class OfflinePosStore {
       (account) =>
           account['id'] != id &&
           account['is_active'] == true &&
-          (account['upi_id'] as String).toLowerCase() == trimmedUpiId.toLowerCase(),
+          (account['upi_id'] as String).toLowerCase() ==
+              trimmedUpiId.toLowerCase(),
     );
     if (duplicate) {
-      throw OfflineStoreException("UPI ID '$trimmedUpiId' is already registered.");
+      throw OfflineStoreException(
+        "UPI ID '$trimmedUpiId' is already registered.",
+      );
     }
 
-    final activeCount = accounts.where((account) => account['is_active'] == true).length;
+    final activeCount =
+        accounts.where((account) => account['is_active'] == true).length;
     if (id == null && activeCount >= 3) {
       throw const OfflineStoreException(
         'Maximum 3 UPI accounts allowed. Please delete an existing account first.',
@@ -455,7 +457,8 @@ class OfflinePosStore {
     for (var i = 0; i < accounts.length; i++) {
       accounts[i] = {
         ...accounts[i],
-        'is_default': accounts[i]['id'] == id && accounts[i]['is_active'] == true,
+        'is_default':
+            accounts[i]['id'] == id && accounts[i]['is_active'] == true,
         'updated_at': DateTime.now().toIso8601String(),
       };
     }
@@ -564,6 +567,10 @@ class OfflinePosStore {
       ...bill,
       'status': 'PENDING_PAYMENT',
       'payment_mode': 'UPI',
+      'cash_received': 0.0,
+      'cash_change': 0.0,
+      'upi_amount': total,
+      'upi_status': 'PENDING',
       'upi_account_id': upiAccountId,
       'upi_id_used': account['upi_id'],
       'upi_qr_string': qr,
@@ -572,15 +579,96 @@ class OfflinePosStore {
     bills[billIndex] = updated;
     state['bills'] = bills;
     await _saveState(state);
-    return {'status': 'PENDING', 'upi_qr_string': qr};
+    return {
+      'status': 'PENDING_PAYMENT',
+      'payment_mode': 'UPI',
+      'upi_qr_string': qr,
+      'upi_amount': total,
+      'cash_received': 0.0,
+      'upi_id_used': account['upi_id'],
+    };
+  }
+
+  Future<Map<String, dynamic>> initiateSplitPayment(
+    int billId, {
+    required double cashAmount,
+    required int upiAccountId,
+  }) async {
+    final state = await _loadState();
+    final bills = List<Map<String, dynamic>>.from(state['bills'] as List);
+    final accounts = List<Map<String, dynamic>>.from(
+      state['upi_accounts'] as List,
+    );
+    final billIndex = bills.indexWhere((bill) => bill['id'] == billId);
+    if (billIndex == -1) {
+      throw const OfflineStoreException('Bill not found');
+    }
+
+    final account = accounts.cast<Map<String, dynamic>?>().firstWhere(
+      (item) => item?['id'] == upiAccountId && item?['is_active'] == true,
+      orElse: () => null,
+    );
+    if (account == null) {
+      throw const OfflineStoreException('No active UPI account available');
+    }
+
+    final bill = bills[billIndex];
+    final total = _asDouble(bill['total_amount']);
+    if (cashAmount <= 0) {
+      throw const OfflineStoreException('Enter the cash amount first');
+    }
+    if (cashAmount >= total) {
+      throw const OfflineStoreException(
+        'Cash amount must be less than the total bill',
+      );
+    }
+
+    final upiAmount = total - cashAmount;
+    final qr = _buildUpiQrString(
+      upiId: account['upi_id'] as String,
+      payeeName: account['label'] as String,
+      amount: upiAmount,
+      billNumber: bill['bill_number'] as String,
+    );
+
+    final updated = {
+      ...bill,
+      'status': 'PENDING_PAYMENT',
+      'payment_mode': 'SPLIT',
+      'cash_received': cashAmount,
+      'cash_change': 0.0,
+      'upi_amount': upiAmount,
+      'upi_status': 'PENDING',
+      'upi_account_id': upiAccountId,
+      'upi_id_used': account['upi_id'],
+      'upi_qr_string': qr,
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+    bills[billIndex] = updated;
+    state['bills'] = bills;
+    await _saveState(state);
+    return {
+      'status': 'PENDING_PAYMENT',
+      'payment_mode': 'SPLIT',
+      'upi_qr_string': qr,
+      'cash_received': cashAmount,
+      'upi_amount': upiAmount,
+      'upi_id_used': account['upi_id'],
+    };
   }
 
   Future<Map<String, dynamic>> paymentStatus(int billId) async {
     final bill = await getBill(billId);
     return {
-      'status': bill['status'] == 'PAID' ? 'PAID' : 'PENDING',
+      'status': bill['status'] == 'PAID' ? 'PAID' : 'PENDING_PAYMENT',
+      'payment_mode': bill['payment_mode'],
+      'total_amount': bill['total_amount'],
+      'cash_received': bill['cash_received'],
+      'cash_change': bill['cash_change'],
+      'upi_amount': bill['upi_amount'],
       'upi_qr_string': bill['upi_qr_string'],
       'upi_ref_id': bill['upi_ref_id'],
+      'upi_id_used': bill['upi_id_used'],
     };
   }
 
@@ -593,11 +681,14 @@ class OfflinePosStore {
     }
 
     final bill = bills[index];
+    final paymentMode = bill['payment_mode'] as String? ?? 'UPI';
     final updated = {
       ...bill,
       'status': 'PAID',
-      'payment_mode': 'UPI',
+      'payment_mode': paymentMode,
       'upi_ref_id': 'TXN${DateTime.now().millisecondsSinceEpoch}',
+      'upi_status': 'SUCCESS',
+      'upi_qr_string': null,
       'updated_at': DateTime.now().toIso8601String(),
     };
     bills[index] = updated;
@@ -654,11 +745,28 @@ class OfflinePosStore {
       0,
       (sum, bill) => sum + _asDouble(bill['total_amount']),
     );
-    final cashTotal = paidBills
-        .where((bill) => bill['payment_mode'] == 'CASH')
-        .fold<double>(0, (sum, bill) => sum + _asDouble(bill['total_amount']));
-    final upiTotal = paidBills
-        .where((bill) => bill['payment_mode'] == 'UPI')
+    final cashTotal = paidBills.fold<double>((0), (sum, bill) {
+      final mode = bill['payment_mode'];
+      if (mode == 'CASH') {
+        return sum + _asDouble(bill['total_amount']);
+      }
+      if (mode == 'SPLIT') {
+        return sum + _asDouble(bill['cash_received']);
+      }
+      return sum;
+    });
+    final upiTotal = paidBills.fold<double>((0), (sum, bill) {
+      final mode = bill['payment_mode'];
+      if (mode == 'UPI') {
+        return sum + _asDouble(bill['total_amount']);
+      }
+      if (mode == 'SPLIT') {
+        return sum + _asDouble(bill['upi_amount']);
+      }
+      return sum;
+    });
+    final splitTotal = paidBills
+        .where((bill) => bill['payment_mode'] == 'SPLIT')
         .fold<double>(0, (sum, bill) => sum + _asDouble(bill['total_amount']));
 
     final categoryBreakdown = <String, Map<String, dynamic>>{};
@@ -677,17 +785,25 @@ class OfflinePosStore {
 
     return {
       if (fromDate != null && toDate != null) ...{
-        'date_from': DateTime(effectiveFrom.year, effectiveFrom.month, effectiveFrom.day)
-            .toIso8601String(),
-        'date_to': DateTime(effectiveTo.year, effectiveTo.month, effectiveTo.day)
-            .toIso8601String(),
+        'date_from':
+            DateTime(
+              effectiveFrom.year,
+              effectiveFrom.month,
+              effectiveFrom.day,
+            ).toIso8601String(),
+        'date_to':
+            DateTime(
+              effectiveTo.year,
+              effectiveTo.month,
+              effectiveTo.day,
+            ).toIso8601String(),
       } else
         'date': DateTime(today.year, today.month, today.day).toIso8601String(),
       'total_sales': totalSales,
       'total_bills': paidBills.length,
       'cash_total': cashTotal,
       'upi_total': upiTotal,
-      'split_total': 0.0,
+      'split_total': splitTotal,
       'category_breakdown': categoryBreakdown,
     };
   }

@@ -28,7 +28,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   Future<void> _fetchBills() async {
     setState(() => _isLoading = true);
     try {
-      final bills = await PosDataService.instance.listBills(query: _searchQuery);
+      final bills = await PosDataService.instance.listBills(
+        query: _searchQuery,
+      );
       if (!mounted) {
         return;
       }
@@ -46,6 +48,70 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
   bool _isPayableStatus(String status) {
     return status == 'DRAFT' || status == 'PENDING_PAYMENT';
+  }
+
+  String _paymentSummary(dynamic bill) {
+    final mode = (bill['payment_mode'] as String?)?.toUpperCase();
+    if (mode == 'SPLIT') {
+      final cash =
+          double.tryParse(bill['cash_received']?.toString() ?? '') ?? 0;
+      final upi = double.tryParse(bill['upi_amount']?.toString() ?? '') ?? 0;
+      return 'Mode: Cash ${AppFormatters.currencyExact(cash)} + UPI ${AppFormatters.currencyExact(upi)}';
+    }
+
+    return 'Mode: ${mode ?? 'N/A'}'
+        '${bill['upi_id_used'] != null ? ' (${bill['upi_id_used']})' : ''}';
+  }
+
+  Future<String?> _askPaymentMode() {
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Select Payment Method'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.money),
+                title: const Text('Cash'),
+                subtitle: const Text('Open direct cash payment'),
+                onTap: () => Navigator.of(dialogContext).pop('CASH'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.qr_code_2),
+                title: const Text('UPI'),
+                subtitle: const Text('Open full UPI payment'),
+                onTap: () => Navigator.of(dialogContext).pop('UPI'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.call_split),
+                title: const Text('UPI + Cash'),
+                subtitle: const Text(
+                  'Enter cash first, then collect balance by UPI',
+                ),
+                onTap: () => Navigator.of(dialogContext).pop('SPLIT'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openBill(dynamic bill) async {
+    final isPayable = _isPayableStatus(bill['status'] as String? ?? '');
+    if (!isPayable) {
+      context.push('/receipt/${bill['id']}');
+      return;
+    }
+
+    final paymentMode = await _askPaymentMode();
+    if (!mounted || paymentMode == null) {
+      return;
+    }
+
+    context.push('/payment/${bill['id']}?mode=$paymentMode');
   }
 
   @override
@@ -95,18 +161,10 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                         itemCount: _bills.length,
                         itemBuilder: (context, index) {
                           final bill = _bills[index];
-                          final isPayable = _isPayableStatus(
-                            bill['status'] as String? ?? '',
-                          );
                           return Card(
                             margin: const EdgeInsets.only(bottom: 12),
                             child: ListTile(
-                              onTap:
-                                  () => context.push(
-                                    isPayable
-                                        ? '/payment/${bill['id']}'
-                                        : '/receipt/${bill['id']}',
-                                  ),
+                              onTap: () => _openBill(bill),
                               title: Row(
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
@@ -131,8 +189,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    'Items: ${bill['item_count']} | Mode: ${bill['payment_mode'] ?? 'N/A'}'
-                                    '${bill['upi_id_used'] != null ? ' (${bill['upi_id_used']})' : ''}',
+                                    'Items: ${bill['item_count']} | ${_paymentSummary(bill)}',
                                     style: const TextStyle(color: Colors.grey),
                                   ),
                                 ],

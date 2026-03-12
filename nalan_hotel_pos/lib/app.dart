@@ -47,7 +47,10 @@ final _router = GoRouter(
       path: '/payment/:billId',
       builder: (context, state) {
         final billId = int.parse(state.pathParameters['billId']!);
-        return PaymentScreen(billId: billId);
+        return PaymentScreen(
+          billId: billId,
+          initialPaymentMode: state.uri.queryParameters['mode'],
+        );
       },
     ),
     GoRoute(

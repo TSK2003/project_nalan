@@ -22,6 +22,10 @@ class _ReceiptScreenState extends ConsumerState<ReceiptScreen> {
   Map<String, dynamic>? _bill;
   bool _isLoading = true;
 
+  double _amountOf(Object? value) {
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -46,6 +50,15 @@ class _ReceiptScreenState extends ConsumerState<ReceiptScreen> {
   Future<Uint8List> _generatePdf(PdfPageFormat format) async {
     final pdf = pw.Document();
     final profile = ref.read(storeProfileProvider);
+    final paymentMode =
+        (_bill!['payment_mode'] as String? ?? 'N/A').toUpperCase();
+    final cashPaid = _amountOf(_bill!['cash_received']);
+    final upiPaid =
+        paymentMode == 'SPLIT'
+            ? _amountOf(_bill!['upi_amount'])
+            : paymentMode == 'UPI'
+            ? _amountOf(_bill!['total_amount'])
+            : 0;
 
     pdf.addPage(
       pw.Page(
@@ -99,7 +112,8 @@ class _ReceiptScreenState extends ConsumerState<ReceiptScreen> {
                     pw.Expanded(
                       flex: 2,
                       child: pw.Text(
-                        item['item_name']?.toString() ?? item['name'].toString(),
+                        item['item_name']?.toString() ??
+                            item['name'].toString(),
                       ),
                     ),
                     pw.Expanded(
@@ -124,7 +138,10 @@ class _ReceiptScreenState extends ConsumerState<ReceiptScreen> {
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Text('Subtotal:'),
-                  pw.Text((_bill!['subtotal'] ?? _bill!['subtotal_amount']).toString()),
+                  pw.Text(
+                    (_bill!['subtotal'] ?? _bill!['subtotal_amount'])
+                        .toString(),
+                  ),
                 ],
               ),
               pw.Row(
@@ -150,7 +167,17 @@ class _ReceiptScreenState extends ConsumerState<ReceiptScreen> {
               ),
               pw.Divider(),
               pw.Text('PAYMENT DETAILS'),
-              pw.Text('Mode: ${_bill!['payment_mode']}'),
+              pw.Text(
+                'Mode: ${paymentMode == 'SPLIT' ? 'UPI + CASH' : paymentMode}',
+              ),
+              if (paymentMode == 'SPLIT') ...[
+                pw.Text('Cash Paid: ${cashPaid.toStringAsFixed(2)}'),
+                pw.Text('UPI Paid: ${upiPaid.toStringAsFixed(2)}'),
+              ] else if (paymentMode == 'CASH') ...[
+                pw.Text('Cash Paid: ${cashPaid.toStringAsFixed(2)}'),
+              ] else if (paymentMode == 'UPI') ...[
+                pw.Text('UPI Paid: ${upiPaid.toStringAsFixed(2)}'),
+              ],
               if (_bill!['upi_id_used'] != null)
                 pw.Text('Paid to: ${_bill!['upi_id_used']}'),
               pw.Text('Status: ${_bill!['status']}'),
