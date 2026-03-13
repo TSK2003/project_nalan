@@ -68,16 +68,66 @@ class PosDataService {
       }
 
       if (username.trim().isEmpty || password.isEmpty) {
-        throw const PosDataException('Username and password are required');
+        throw const PosDataException('Mobile number and password are required');
       }
-      return {
-        'token': 'offline-${DateTime.now().millisecondsSinceEpoch}',
-        'refresh_token': 'offline-refresh-token',
-        'cashier_name': username.trim(),
-        'user_id': 1,
-      };
+      return OfflinePosStore.instance.loginWithLocalCredentials(
+        mobileNumber: username.trim(),
+        password: password,
+      );
     } catch (error) {
       throw _error(error, fallback: 'Login failed. Please try again.');
+    }
+  }
+
+  Future<bool> hasSavedLocalLogin() async {
+    try {
+      if (isCloudMode) {
+        return true;
+      }
+      return OfflinePosStore.instance.hasLocalAuthUser();
+    } catch (error) {
+      throw _error(error, fallback: 'Failed to load login settings');
+    }
+  }
+
+  Future<Map<String, dynamic>?> getSavedLocalLogin() async {
+    try {
+      if (isCloudMode) {
+        return null;
+      }
+      return OfflinePosStore.instance.getLocalAuthUser();
+    } catch (error) {
+      throw _error(error, fallback: 'Failed to load login settings');
+    }
+  }
+
+  Future<void> saveLocalLogin({
+    required String mobileNumber,
+    required String password,
+    String? fullName,
+  }) async {
+    try {
+      if (isCloudMode) {
+        return;
+      }
+      await OfflinePosStore.instance.saveLocalAuthUser(
+        mobileNumber: mobileNumber,
+        password: password,
+        fullName: fullName,
+      );
+    } catch (error) {
+      throw _error(error, fallback: 'Failed to save login settings');
+    }
+  }
+
+  Future<void> clearLocalLogin() async {
+    try {
+      if (isCloudMode) {
+        return;
+      }
+      await OfflinePosStore.instance.clearLocalAuthUser();
+    } catch (error) {
+      throw _error(error, fallback: 'Failed to clear login settings');
     }
   }
 

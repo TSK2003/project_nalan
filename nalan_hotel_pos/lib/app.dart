@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'core/constants/app_colors.dart';
+import 'features/auth/presentation/login_screen.dart';
 import 'features/billing/presentation/new_bill_screen.dart';
 import 'features/history/presentation/history_screen.dart';
 import 'features/menu/presentation/menu_screen.dart';
@@ -17,6 +18,7 @@ final _router = GoRouter(
   initialLocation: '/',
   routes: [
     GoRoute(path: '/', builder: (context, state) => const StartupGateScreen()),
+    GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
     GoRoute(
       path: '/setup',
       builder: (context, state) => const ProfileScreen(setupMode: true),
@@ -168,6 +170,7 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
     final primaryColor = Theme.of(context).colorScheme.primary;
     final location = GoRouterState.of(context).uri.toString();
     for (int i = 0; i < _paths.length; i++) {
@@ -178,52 +181,65 @@ class _MainShellState extends State<MainShell> {
     }
 
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       body: widget.child,
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 10,
-              offset: const Offset(0, -2),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        maintainBottomViewPadding: true,
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: mediaQuery.padding.bottom > 0 ? 4 : 0,
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, -2),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: NavigationBar(
-          selectedIndex: _currentIndex,
-          onDestinationSelected: (index) {
-            setState(() => _currentIndex = index);
-            context.go(_paths[index]);
-          },
-          backgroundColor: Colors.white,
-          indicatorColor: primaryColor.withValues(alpha: 0.15),
-          destinations: [
-            NavigationDestination(
-              icon: const Icon(Icons.receipt_long_outlined),
-              selectedIcon: Icon(Icons.receipt_long, color: primaryColor),
-              label: 'Billing',
+            child: NavigationBar(
+              selectedIndex: _currentIndex,
+              onDestinationSelected: (index) {
+                setState(() => _currentIndex = index);
+                context.go(_paths[index]);
+              },
+              backgroundColor: Colors.white,
+              indicatorColor: primaryColor.withValues(alpha: 0.15),
+              destinations: [
+                NavigationDestination(
+                  icon: const Icon(Icons.receipt_long_outlined),
+                  selectedIcon: Icon(Icons.receipt_long, color: primaryColor),
+                  label: 'Billing',
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.restaurant_menu_outlined),
+                  selectedIcon: Icon(
+                    Icons.restaurant_menu,
+                    color: primaryColor,
+                  ),
+                  label: 'Menu',
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.history_outlined),
+                  selectedIcon: Icon(Icons.history, color: primaryColor),
+                  label: 'History',
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.bar_chart_outlined),
+                  selectedIcon: Icon(Icons.bar_chart, color: primaryColor),
+                  label: 'Summary',
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.storefront_outlined),
+                  selectedIcon: Icon(Icons.storefront, color: primaryColor),
+                  label: 'Profile',
+                ),
+              ],
             ),
-            NavigationDestination(
-              icon: const Icon(Icons.restaurant_menu_outlined),
-              selectedIcon: Icon(Icons.restaurant_menu, color: primaryColor),
-              label: 'Menu',
-            ),
-            NavigationDestination(
-              icon: const Icon(Icons.history_outlined),
-              selectedIcon: Icon(Icons.history, color: primaryColor),
-              label: 'History',
-            ),
-            NavigationDestination(
-              icon: const Icon(Icons.bar_chart_outlined),
-              selectedIcon: Icon(Icons.bar_chart, color: primaryColor),
-              label: 'Summary',
-            ),
-            NavigationDestination(
-              icon: const Icon(Icons.storefront_outlined),
-              selectedIcon: Icon(Icons.storefront, color: primaryColor),
-              label: 'Profile',
-            ),
-          ],
+          ),
         ),
       ),
     );

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/constants/app_colors.dart';
 import '../../../core/data/pos_data_service.dart';
 import '../../../core/utils/formatters.dart';
@@ -77,13 +78,41 @@ class _MenuScreenState extends ConsumerState<MenuScreen>
     }
   }
 
+  List<MenuItem> _categoryItems() {
+    final selectedCategory = _categories[_tabController.index];
+    return _items.where((item) => item.category == selectedCategory).toList();
+  }
+
+  int _gridCount(double width) {
+    if (width >= 1100) {
+      return 4;
+    }
+    if (width >= 760) {
+      return 3;
+    }
+    if (width >= 320) {
+      return 2;
+    }
+    return 1;
+  }
+
+  double _gridAspectRatio(double width, int crossAxisCount) {
+    if (crossAxisCount == 1) {
+      return width < 360 ? 1.35 : 1.5;
+    }
+    if (crossAxisCount == 2) {
+      return width < 420 ? 1.12 : 1.2;
+    }
+    return width >= 1000 ? 1.08 : 1.0;
+  }
+
   Future<void> _toggleAvailability(MenuItem item) async {
     final originalState = item.isAvailable;
     setState(() => item.isAvailable = !originalState);
 
     try {
       await PosDataService.instance.toggleMenuAvailability(item.id);
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         setState(() => item.isAvailable = originalState);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -97,19 +126,21 @@ class _MenuScreenState extends ConsumerState<MenuScreen>
     final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Delete Menu Item'),
-          content: Text('Delete "${item.name}" from ${item.category}?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Delete'),
-            ),
-          ],
+        return SafeArea(
+          child: AlertDialog(
+            title: const Text('Delete Menu Item'),
+            content: Text('Delete "${item.name}" from ${item.category}?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -150,7 +181,10 @@ class _MenuScreenState extends ConsumerState<MenuScreen>
     final didSave = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       builder: (sheetContext) {
+        final mediaQuery = MediaQuery.of(sheetContext);
+
         return StatefulBuilder(
           builder: (context, setSheetState) {
             Future<void> submit() async {
@@ -193,113 +227,115 @@ class _MenuScreenState extends ConsumerState<MenuScreen>
               }
             }
 
-            return Padding(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                16,
-                16,
-                MediaQuery.of(sheetContext).viewInsets.bottom + 16,
-              ),
-              child: Form(
-                key: formKey,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item == null ? 'Add Menu Item' : 'Edit Menu Item',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: nameController,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          labelText: 'Item Name',
-                          border: OutlineInputBorder(),
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  16,
+                  16,
+                  mediaQuery.viewInsets.bottom + mediaQuery.padding.bottom + 16,
+                ),
+                child: Form(
+                  key: formKey,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item == null ? 'Add Menu Item' : 'Edit Menu Item',
+                          style: Theme.of(context).textTheme.titleLarge,
                         ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Enter item name';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        initialValue: selectedCategory,
-                        decoration: const InputDecoration(
-                          labelText: 'Category',
-                          border: OutlineInputBorder(),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: nameController,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'Item Name',
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Enter item name';
+                            }
+                            return null;
+                          },
                         ),
-                        items:
-                            _categories
-                                .map(
-                                  (category) => DropdownMenuItem(
-                                    value: category,
-                                    child: Text(category),
-                                  ),
-                                )
-                                .toList(),
-                        onChanged: (value) {
-                          if (value == null) {
-                            return;
-                          }
-                          setSheetState(() => selectedCategory = value);
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: priceController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Price',
-                          prefixText: 'Rs. ',
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) {
-                          final price = double.tryParse(value?.trim() ?? '');
-                          if (price == null || price <= 0) {
-                            return 'Enter a valid price';
-                          }
-                          return null;
-                        },
-                      ),
-                      if (item != null) ...[
                         const SizedBox(height: 12),
-                        SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          value: isAvailable,
-                          activeThumbColor:
-                              Theme.of(context).colorScheme.primary,
-                          title: const Text('Available'),
-                          onChanged:
-                              (value) =>
-                                  setSheetState(() => isAvailable = value),
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: isSubmitting ? null : submit,
-                          child:
-                              isSubmitting
-                                  ? const SizedBox(
-                                    height: 18,
-                                    width: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
+                        DropdownButtonFormField<String>(
+                          initialValue: selectedCategory,
+                          decoration: const InputDecoration(
+                            labelText: 'Category',
+                            border: OutlineInputBorder(),
+                          ),
+                          items:
+                              _categories
+                                  .map(
+                                    (category) => DropdownMenuItem(
+                                      value: category,
+                                      child: Text(category),
                                     ),
                                   )
-                                  : Text(item == null ? 'Add Item' : 'Save'),
+                                  .toList(),
+                          onChanged: (value) {
+                            if (value == null) {
+                              return;
+                            }
+                            setSheetState(() => selectedCategory = value);
+                          },
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: priceController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Price',
+                            prefixText: 'Rs. ',
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: (value) {
+                            final price = double.tryParse(value?.trim() ?? '');
+                            if (price == null || price <= 0) {
+                              return 'Enter a valid price';
+                            }
+                            return null;
+                          },
+                        ),
+                        if (item != null) ...[
+                          const SizedBox(height: 12),
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            value: isAvailable,
+                            activeThumbColor:
+                                Theme.of(context).colorScheme.primary,
+                            title: const Text('Available'),
+                            onChanged:
+                                (value) =>
+                                    setSheetState(() => isAvailable = value),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: isSubmitting ? null : submit,
+                            child:
+                                isSubmitting
+                                    ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                    : Text(item == null ? 'Add Item' : 'Save'),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -327,101 +363,161 @@ class _MenuScreenState extends ConsumerState<MenuScreen>
     }
   }
 
+  Widget _buildMenuItemCard(MenuItem item, Color primaryColor) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _showItemBottomSheet(item),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      item.name,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color:
+                            item.isAvailable
+                                ? AppColors.textDark
+                                : AppColors.textLight,
+                        decoration:
+                            item.isAvailable
+                                ? null
+                                : TextDecoration.lineThrough,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Delete item',
+                    onPressed: () => _deleteMenuItem(item),
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              Text(
+                AppFormatters.currencyExact(item.price),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: primaryColor,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      item.isAvailable ? 'Available' : 'Unavailable',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color:
+                            item.isAvailable
+                                ? Colors.green.shade700
+                                : Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+                  Switch.adaptive(
+                    value: item.isAvailable,
+                    activeThumbColor: primaryColor,
+                    onChanged: (_) => _toggleAvailability(item),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final screenWidth = mediaQuery.size.width;
     final primaryColor = Theme.of(context).colorScheme.primary;
+    final categoryItems = _categoryItems();
+    final outerPadding = screenWidth < 600 ? 12.0 : 16.0;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Menu Management'),
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          indicatorColor: Colors.white,
-          tabs: _categories.map((c) => Tab(text: c)).toList(),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () => _showItemBottomSheet(),
+    return SafeArea(
+      child: Scaffold(
+        resizeToAvoidBottomInset: true,
+        appBar: AppBar(
+          title: const Text('Menu Management'),
+          bottom: TabBar(
+            controller: _tabController,
+            isScrollable: true,
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white70,
+            indicatorColor: Colors.white,
+            tabs: _categories.map((c) => Tab(text: c)).toList(),
           ),
-        ],
-      ),
-      body:
-          _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : RefreshIndicator(
-                onRefresh: _fetchMenu,
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount:
-                      _items
-                          .where(
-                            (i) =>
-                                i.category == _categories[_tabController.index],
-                          )
-                          .length,
-                  itemBuilder: (context, index) {
-                    final categoryItems =
-                        _items
-                            .where(
-                              (i) =>
-                                  i.category ==
-                                  _categories[_tabController.index],
-                            )
-                            .toList();
-                    final item = categoryItems[index];
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.add),
+              onPressed: () => _showItemBottomSheet(),
+            ),
+          ],
+        ),
+        body:
+            _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (categoryItems.isEmpty) {
+                      return RefreshIndicator(
+                        onRefresh: _fetchMenu,
+                        child: ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: EdgeInsets.all(outerPadding),
+                          children: const [
+                            SizedBox(height: 160),
+                            Center(
+                              child: Text('No items in this category yet.'),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
 
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      child: ListTile(
-                        onTap: () => _showItemBottomSheet(item),
-                        title: Text(
-                          item.name,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color:
-                                item.isAvailable
-                                    ? AppColors.textDark
-                                    : AppColors.textLight,
-                            decoration:
-                                item.isAvailable
-                                    ? null
-                                    : TextDecoration.lineThrough,
+                    final contentWidth = constraints.maxWidth;
+                    final crossAxisCount = _gridCount(contentWidth);
+
+                    return RefreshIndicator(
+                      onRefresh: _fetchMenu,
+                      child: GridView.builder(
+                        padding: EdgeInsets.all(outerPadding),
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: crossAxisCount,
+                          childAspectRatio: _gridAspectRatio(
+                            contentWidth,
+                            crossAxisCount,
                           ),
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
                         ),
-                        subtitle: Text(
-                          AppFormatters.currencyExact(item.price),
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: primaryColor,
-                          ),
-                        ),
-                        trailing: SizedBox(
-                          width: 126,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Switch(
-                                value: item.isAvailable,
-                                activeThumbColor: primaryColor,
-                                onChanged: (_) => _toggleAvailability(item),
-                              ),
-                              IconButton(
-                                tooltip: 'Delete item',
-                                onPressed: () => _deleteMenuItem(item),
-                                icon: const Icon(Icons.delete_outline),
-                              ),
-                            ],
-                          ),
-                        ),
+                        itemCount: categoryItems.length,
+                        itemBuilder: (context, index) {
+                          return _buildMenuItemCard(
+                            categoryItems[index],
+                            primaryColor,
+                          );
+                        },
                       ),
                     );
                   },
                 ),
-              ),
+      ),
     );
   }
 

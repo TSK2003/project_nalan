@@ -66,9 +66,11 @@ class OfflinePosStore {
       'next_bill_id': 1,
       'next_bill_sequence': 1,
       'next_upi_id': 1,
+      'next_user_id': 1,
       'menu_items': menu,
       'bills': <Map<String, dynamic>>[],
       'upi_accounts': <Map<String, dynamic>>[],
+      'auth_users': <Map<String, dynamic>>[],
     };
   }
 
@@ -78,6 +80,7 @@ class OfflinePosStore {
       'next_bill_id': state['next_bill_id'] as int? ?? 1,
       'next_bill_sequence': state['next_bill_sequence'] as int? ?? 1,
       'next_upi_id': state['next_upi_id'] as int? ?? 1,
+      'next_user_id': state['next_user_id'] as int? ?? 1,
       'menu_items': List<Map<String, dynamic>>.from(
         (state['menu_items'] as List? ?? []).map(
           (item) => Map<String, dynamic>.from(item as Map),
@@ -90,6 +93,11 @@ class OfflinePosStore {
       ),
       'upi_accounts': List<Map<String, dynamic>>.from(
         (state['upi_accounts'] as List? ?? []).map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        ),
+      ),
+      'auth_users': List<Map<String, dynamic>>.from(
+        (state['auth_users'] as List? ?? []).map(
           (item) => Map<String, dynamic>.from(item as Map),
         ),
       ),
@@ -143,6 +151,113 @@ class OfflinePosStore {
         '${now.month.toString().padLeft(2, '0')}'
         '${now.day.toString().padLeft(2, '0')}';
     return 'BILL-$datePrefix-${sequence.toString().padLeft(4, '0')}';
+  }
+
+  Future<Map<String, dynamic>?> getLocalAuthUser() async {
+    final state = await _loadState();
+    final users = List<Map<String, dynamic>>.from(state['auth_users'] as List);
+    final user = users.cast<Map<String, dynamic>?>().firstWhere(
+      (item) => item?['is_active'] == true,
+      orElse: () => null,
+    );
+    return user == null ? null : _copyJsonMap(user);
+  }
+
+  Future<bool> hasLocalAuthUser() async {
+    final user = await getLocalAuthUser();
+    return user != null;
+  }
+
+  Future<Map<String, dynamic>> saveLocalAuthUser({
+    required String mobileNumber,
+    required String password,
+    String? fullName,
+  }) async {
+    final trimmedMobile = mobileNumber.trim();
+    final trimmedPassword = password.trim();
+    if (trimmedMobile.length < 10) {
+      throw const OfflineStoreException('Enter a valid mobile number');
+    }
+    if (trimmedPassword.length < 4) {
+      throw const OfflineStoreException(
+        'Password must be at least 4 characters',
+      );
+    }
+
+    final state = await _loadState();
+    final users = List<Map<String, dynamic>>.from(state['auth_users'] as List);
+    final now = DateTime.now().toIso8601String();
+    final index = users.indexWhere((user) => user['is_active'] == true);
+
+    late final Map<String, dynamic> savedUser;
+    if (index == -1) {
+      savedUser = {
+        'id': state['next_user_id'] as int,
+        'mobile_number': trimmedMobile,
+        'password': trimmedPassword,
+        'full_name': (fullName ?? '').trim(),
+        'is_active': true,
+        'created_at': now,
+        'updated_at': now,
+      };
+      users.add(savedUser);
+      state['next_user_id'] = (state['next_user_id'] as int) + 1;
+    } else {
+      savedUser = {
+        ...users[index],
+        'mobile_number': trimmedMobile,
+        'password': trimmedPassword,
+        'full_name':
+            (fullName ?? users[index]['full_name']?.toString() ?? '').trim(),
+        'updated_at': now,
+      };
+      users[index] = savedUser;
+    }
+
+    state['auth_users'] = users;
+    await _saveState(state);
+    return _copyJsonMap(savedUser);
+  }
+
+  Future<void> clearLocalAuthUser() async {
+    final state = await _loadState();
+    final users = List<Map<String, dynamic>>.from(state['auth_users'] as List);
+    if (users.isEmpty) {
+      return;
+    }
+    final now = DateTime.now().toIso8601String();
+    for (var i = 0; i < users.length; i++) {
+      users[i] = {...users[i], 'is_active': false, 'updated_at': now};
+    }
+    state['auth_users'] = users;
+    await _saveState(state);
+  }
+
+  Future<Map<String, dynamic>> loginWithLocalCredentials({
+    required String mobileNumber,
+    required String password,
+  }) async {
+    final user = await getLocalAuthUser();
+    if (user == null) {
+      throw const OfflineStoreException(
+        'Set mobile login credentials in Store Profile first',
+      );
+    }
+
+    if (user['mobile_number'] != mobileNumber.trim() ||
+        user['password'] != password) {
+      throw const OfflineStoreException('Invalid mobile number or password');
+    }
+
+    return {
+      'token': 'offline-${DateTime.now().millisecondsSinceEpoch}',
+      'refresh_token': 'offline-refresh-token',
+      'cashier_name':
+          (user['full_name'] as String?)?.trim().isNotEmpty == true
+              ? user['full_name']
+              : user['mobile_number'],
+      'user_id': user['id'] as int? ?? 1,
+    };
   }
 
   Future<List<Map<String, dynamic>>> getMenu({

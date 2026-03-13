@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/data/pos_data_service.dart';
+import '../../../shared/providers/auth_state.dart';
 import '../../../shared/providers/store_profile.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_text_field.dart';
@@ -20,29 +21,53 @@ class StartupGateScreen extends ConsumerStatefulWidget {
 
 class _StartupGateScreenState extends ConsumerState<StartupGateScreen> {
   bool _navigated = false;
+  bool _isCheckingLogin = true;
+  bool _requiresLogin = false;
 
   @override
   void initState() {
     super.initState();
-    Future.microtask(() {
-      ref.read(storeProfileProvider.notifier).loadProfile();
+    Future.microtask(_initialize);
+  }
+
+  Future<void> _initialize() async {
+    await ref.read(storeProfileProvider.notifier).loadProfile();
+    await ref.read(authProvider.notifier).checkAuth();
+    final requiresLogin = await PosDataService.instance.hasSavedLocalLogin();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _requiresLogin = requiresLogin;
+      _isCheckingLogin = false;
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final profile = ref.watch(storeProfileProvider);
-    if (profile.isLoaded && !_navigated) {
+    final authState = ref.watch(authProvider);
+    if (profile.isLoaded && !_isCheckingLogin && !_navigated) {
       _navigated = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) {
           return;
         }
-        context.go(profile.isConfigured ? '/billing' : '/setup');
+        if (!profile.isConfigured) {
+          context.go('/setup');
+          return;
+        }
+        if (_requiresLogin && !authState.isAuthenticated) {
+          context.go('/login');
+          return;
+        }
+        context.go('/billing');
       });
     }
 
-    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    return const SafeArea(
+      child: Scaffold(body: Center(child: CircularProgressIndicator())),
+    );
   }
 }
 
@@ -61,11 +86,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _taglineController = TextEditingController();
   final _addressController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _loginMobileController = TextEditingController();
+  final _loginPasswordController = TextEditingController();
   final _logoPathController = TextEditingController();
   int _selectedColorValue = themeColorOptions.first.toARGB32();
   bool _initialized = false;
   bool _isSaving = false;
   bool _isLoadingUpiAccounts = true;
+  bool _hasSavedLogin = false;
+  String _savedLoginMobile = '';
   List<_UpiAccountData> _upiAccounts = [];
 
   @override
@@ -80,10 +109,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _taglineController.text = profile.tagline;
     _addressController.text = profile.address;
     _phoneController.text = profile.phone;
+    _loginMobileController.text = profile.loginMobileNumber;
     _logoPathController.text = profile.logoPath;
     _selectedColorValue = profile.primaryColorValue;
     _initialized = true;
     _loadUpiAccounts();
+    _loadLoginSettings();
   }
 
   @override
@@ -92,6 +123,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _taglineController.dispose();
     _addressController.dispose();
     _phoneController.dispose();
+    _loginMobileController.dispose();
+    _loginPasswordController.dispose();
     _logoPathController.dispose();
     super.dispose();
   }
@@ -146,6 +179,31 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  Future<void> _loadLoginSettings() async {
+    try {
+      final savedLogin = await PosDataService.instance.getSavedLocalLogin();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _hasSavedLogin = savedLogin != null;
+        _savedLoginMobile = savedLogin?['mobile_number'] as String? ?? '';
+        if (_loginMobileController.text.trim().isEmpty &&
+            _savedLoginMobile.isNotEmpty) {
+          _loginMobileController.text = _savedLoginMobile;
+        }
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _hasSavedLogin = false;
+        _savedLoginMobile = '';
+      });
+    }
+  }
+
   Future<void> _showUpiAccountSheet([_UpiAccountData? account]) async {
     final formKey = GlobalKey<FormState>();
     final labelController = TextEditingController(text: account?.label ?? '');
@@ -155,7 +213,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final didSave = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       builder: (sheetContext) {
+        final mediaQuery = MediaQuery.of(sheetContext);
+
         return StatefulBuilder(
           builder: (context, setSheetState) {
             Future<void> submit() async {
@@ -191,73 +252,75 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               }
             }
 
-            return Padding(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                16,
-                16,
-                MediaQuery.of(sheetContext).viewInsets.bottom + 16,
-              ),
-              child: Form(
-                key: formKey,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        account == null
-                            ? 'Add UPI Account'
-                            : 'Edit UPI Account',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 16),
-                      AppTextField(
-                        controller: labelController,
-                        label: 'Label',
-                        prefixIcon: Icons.account_balance_wallet_outlined,
-                        validator: (value) {
-                          if (value == null || value.trim().length < 2) {
-                            return 'Enter a label';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      AppTextField(
-                        controller: upiIdController,
-                        label: 'UPI ID',
-                        prefixIcon: Icons.qr_code_2_outlined,
-                        validator: (value) {
-                          final text = value?.trim() ?? '';
-                          final upiRegex = RegExp(r'^[\w.\-]+@[\w]+$');
-                          if (!upiRegex.hasMatch(text)) {
-                            return 'Enter a valid UPI ID';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 20),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: isSubmitting ? null : submit,
-                          child:
-                              isSubmitting
-                                  ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                  : Text(
-                                    account == null ? 'Add UPI' : 'Save UPI',
-                                  ),
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  16,
+                  16,
+                  mediaQuery.viewInsets.bottom + mediaQuery.padding.bottom + 16,
+                ),
+                child: Form(
+                  key: formKey,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          account == null
+                              ? 'Add UPI Account'
+                              : 'Edit UPI Account',
+                          style: Theme.of(context).textTheme.titleLarge,
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 16),
+                        AppTextField(
+                          controller: labelController,
+                          label: 'Label',
+                          prefixIcon: Icons.account_balance_wallet_outlined,
+                          validator: (value) {
+                            if (value == null || value.trim().length < 2) {
+                              return 'Enter a label';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        AppTextField(
+                          controller: upiIdController,
+                          label: 'UPI ID',
+                          prefixIcon: Icons.qr_code_2_outlined,
+                          validator: (value) {
+                            final text = value?.trim() ?? '';
+                            final upiRegex = RegExp(r'^[\w.\-]+@[\w]+$');
+                            if (!upiRegex.hasMatch(text)) {
+                              return 'Enter a valid UPI ID';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: isSubmitting ? null : submit,
+                            child:
+                                isSubmitting
+                                    ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                    : Text(
+                                      account == null ? 'Add UPI' : 'Save UPI',
+                                    ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -303,7 +366,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_errorMessage(e, fallback: 'Failed to set default UPI')),
+          content: Text(
+            _errorMessage(e, fallback: 'Failed to set default UPI'),
+          ),
         ),
       );
     }
@@ -340,8 +405,43 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return fallback;
   }
 
+  Future<void> _logout() async {
+    await ref.read(authProvider.notifier).logout();
+    if (!mounted) {
+      return;
+    }
+    final hasLocalLogin = await PosDataService.instance.hasSavedLocalLogin();
+    if (!mounted) {
+      return;
+    }
+    context.go(hasLocalLogin ? '/login' : '/billing');
+  }
+
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    final loginMobile = _loginMobileController.text.trim();
+    final loginPassword = _loginPasswordController.text.trim();
+    final loginMobileChanged =
+        loginMobile.isNotEmpty && loginMobile != _savedLoginMobile;
+    if (loginMobile.isEmpty && loginPassword.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter the login mobile number to save credentials'),
+        ),
+      );
+      return;
+    }
+    if (loginMobile.isNotEmpty &&
+        loginPassword.isEmpty &&
+        (!_hasSavedLogin || loginMobileChanged)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter the login password to save credentials'),
+        ),
+      );
       return;
     }
 
@@ -352,45 +452,80 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       tagline: _taglineController.text.trim(),
       address: _addressController.text.trim(),
       phone: _phoneController.text.trim(),
+      loginMobileNumber: loginMobile,
       logoPath: _logoPathController.text.trim(),
       primaryColorValue: _selectedColorValue,
     );
+    try {
+      await ref.read(storeProfileProvider.notifier).saveProfile(nextProfile);
+      if (loginMobile.isEmpty) {
+        await PosDataService.instance.clearLocalLogin();
+        _hasSavedLogin = false;
+        _savedLoginMobile = '';
+      } else if (loginPassword.isNotEmpty) {
+        await PosDataService.instance.saveLocalLogin(
+          mobileNumber: loginMobile,
+          password: loginPassword,
+          fullName: _hotelNameController.text.trim(),
+        );
+        _hasSavedLogin = true;
+        _savedLoginMobile = loginMobile;
+      }
 
-    await ref.read(storeProfileProvider.notifier).saveProfile(nextProfile);
-    if (!mounted) {
-      return;
+      if (!mounted) {
+        return;
+      }
+
+      _loginPasswordController.clear();
+      setState(() => _isSaving = false);
+      if (widget.setupMode) {
+        context.go('/billing');
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            loginMobile.isEmpty
+                ? 'Store profile updated'
+                : 'Store profile and login saved',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isSaving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_errorMessage(e, fallback: 'Failed to save profile')),
+        ),
+      );
     }
-
-    setState(() => _isSaving = false);
-    if (widget.setupMode) {
-      context.go('/billing');
-      return;
-    }
-
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Store profile updated')));
   }
 
   Future<void> _resetLocalSetup() async {
     final shouldReset = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Reset Local App Setup'),
-          content: const Text(
-            'This clears the saved store profile, menu, bills, and UPI setup on this device and returns the app to first-time setup.',
+        return SafeArea(
+          child: AlertDialog(
+            title: const Text('Reset Local App Setup'),
+            content: const Text(
+              'This clears the saved store profile, menu, bills, and UPI setup on this device and returns the app to first-time setup.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Reset'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Reset'),
-            ),
-          ],
         );
       },
     );
@@ -400,6 +535,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
 
     await ref.read(storeProfileProvider.notifier).clearProfile();
+    await ref.read(authProvider.notifier).logout();
     await PosDataService.instance.clearLocalData();
     if (!mounted) {
       return;
@@ -409,205 +545,265 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final screenWidth = mediaQuery.size.width;
     final primaryColor = Color(_selectedColorValue);
+    final outerPadding = screenWidth < 600 ? 16.0 : 24.0;
+    final formFields = Column(
+      children: [
+        AppTextField(
+          controller: _hotelNameController,
+          label: 'Hotel / Store Name',
+          prefixIcon: Icons.storefront_outlined,
+          validator:
+              (value) =>
+                  value == null || value.trim().isEmpty
+                      ? 'Store name is required'
+                      : null,
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 16),
+        AppTextField(
+          controller: _taglineController,
+          label: 'Tagline',
+          prefixIcon: Icons.badge_outlined,
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 16),
+        AppTextField(
+          controller: _addressController,
+          label: 'Address',
+          prefixIcon: Icons.location_on_outlined,
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 16),
+        AppTextField(
+          controller: _phoneController,
+          label: 'Phone',
+          prefixIcon: Icons.call_outlined,
+          keyboardType: TextInputType.phone,
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 16),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'App Login',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Save a mobile number and password to require login before opening billing screens.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 16),
+        AppTextField(
+          controller: _loginMobileController,
+          label: 'Login Mobile Number',
+          prefixIcon: Icons.phone_android_outlined,
+          keyboardType: TextInputType.phone,
+        ),
+        const SizedBox(height: 16),
+        AppTextField(
+          controller: _loginPasswordController,
+          label:
+              _hasSavedLogin
+                  ? 'New Password (leave blank to keep current)'
+                  : 'Login Password',
+          prefixIcon: Icons.lock_outline,
+          obscureText: true,
+        ),
+        if (_hasSavedLogin) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Saved login: ${_savedLoginMobile.isEmpty ? 'Configured' : _savedLoginMobile}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
+        AppTextField(
+          controller: _logoPathController,
+          label: 'Logo URL or local file path',
+          prefixIcon: Icons.image_outlined,
+          suffixIcon: IconButton(
+            tooltip: 'Choose image',
+            onPressed: _pickLogoImage,
+            icon: const Icon(Icons.upload_file_outlined),
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: _pickLogoImage,
+            icon: const Icon(Icons.add_photo_alternate_outlined),
+            label: const Text('Upload profile image'),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Theme Color',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children:
+              themeColorOptions.map((color) {
+                final colorValue = color.toARGB32();
+                final isSelected = colorValue == _selectedColorValue;
+                return InkWell(
+                  onTap: () => setState(() => _selectedColorValue = colorValue),
+                  borderRadius: BorderRadius.circular(999),
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isSelected ? Colors.black : Colors.transparent,
+                        width: 2,
+                      ),
+                    ),
+                    child:
+                        isSelected
+                            ? const Icon(Icons.check, color: Colors.white)
+                            : null,
+                  ),
+                );
+              }).toList(),
+        ),
+      ],
+    );
 
-    return Scaffold(
-      appBar:
-          widget.setupMode ? null : AppBar(title: const Text('Store Profile')),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 860),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.setupMode
-                            ? 'Set Up Your Store'
-                            : 'Brand and Store Settings',
-                        style: Theme.of(context).textTheme.headlineSmall,
+    final previewCard = _ProfilePreviewCard(
+      hotelName:
+          _hotelNameController.text.trim().isEmpty
+              ? 'My Store POS'
+              : _hotelNameController.text.trim(),
+      tagline: _taglineController.text.trim(),
+      address: _addressController.text.trim(),
+      phone: _phoneController.text.trim(),
+      logoPath: _logoPathController.text.trim(),
+      primaryColor: primaryColor,
+    );
+
+    return SafeArea(
+      child: Scaffold(
+        resizeToAvoidBottomInset: true,
+        appBar:
+            widget.setupMode
+                ? null
+                : AppBar(
+                  title: const Text('Store Profile'),
+                  actions: [
+                    if (ref.watch(authProvider).isAuthenticated)
+                      IconButton(
+                        tooltip: 'Logout',
+                        onPressed: _logout,
+                        icon: const Icon(Icons.logout),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        widget.setupMode
-                            ? 'Configure the store once, then start billing without a login screen.'
-                            : 'Update the store identity so this app can be reused for another hotel or branch.',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 24),
-                      Wrap(
-                        spacing: 24,
-                        runSpacing: 24,
-                        crossAxisAlignment: WrapCrossAlignment.start,
-                        children: [
-                          SizedBox(
-                            width: 320,
-                            child: _ProfilePreviewCard(
-                              hotelName:
-                                  _hotelNameController.text.trim().isEmpty
-                                      ? 'My Store POS'
-                                      : _hotelNameController.text.trim(),
-                              tagline: _taglineController.text.trim(),
-                              address: _addressController.text.trim(),
-                              phone: _phoneController.text.trim(),
-                              logoPath: _logoPathController.text.trim(),
-                              primaryColor: primaryColor,
-                            ),
-                          ),
-                          SizedBox(
-                            width: 460,
-                            child: Column(
+                  ],
+                ),
+        body: Center(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              outerPadding,
+              outerPadding,
+              outerPadding,
+              outerPadding + mediaQuery.padding.bottom,
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 960),
+              child: Card(
+                child: Padding(
+                  padding: EdgeInsets.all(screenWidth < 600 ? 16 : 24),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.setupMode
+                              ? 'Set Up Your Store'
+                              : 'Brand and Store Settings',
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          widget.setupMode
+                              ? 'Configure the store once, then start billing without a login screen.'
+                              : 'Update the store identity so this app can be reused for another hotel or branch.',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 24),
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final isWide = constraints.maxWidth >= 820;
+
+                            if (!isWide) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: previewCard,
+                                  ),
+                                  const SizedBox(height: 24),
+                                  formFields,
+                                ],
+                              );
+                            }
+
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                AppTextField(
-                                  controller: _hotelNameController,
-                                  label: 'Hotel / Store Name',
-                                  prefixIcon: Icons.storefront_outlined,
-                                  validator:
-                                      (value) =>
-                                          value == null || value.trim().isEmpty
-                                              ? 'Store name is required'
-                                              : null,
-                                  onChanged: (_) => setState(() {}),
-                                ),
-                                const SizedBox(height: 16),
-                                AppTextField(
-                                  controller: _taglineController,
-                                  label: 'Tagline',
-                                  prefixIcon: Icons.badge_outlined,
-                                  onChanged: (_) => setState(() {}),
-                                ),
-                                const SizedBox(height: 16),
-                                AppTextField(
-                                  controller: _addressController,
-                                  label: 'Address',
-                                  prefixIcon: Icons.location_on_outlined,
-                                  onChanged: (_) => setState(() {}),
-                                ),
-                                const SizedBox(height: 16),
-                                AppTextField(
-                                  controller: _phoneController,
-                                  label: 'Phone',
-                                  prefixIcon: Icons.call_outlined,
-                                  keyboardType: TextInputType.phone,
-                                  onChanged: (_) => setState(() {}),
-                                ),
-                                const SizedBox(height: 16),
-                                AppTextField(
-                                  controller: _logoPathController,
-                                  label: 'Logo URL or local file path',
-                                  prefixIcon: Icons.image_outlined,
-                                  suffixIcon: IconButton(
-                                    tooltip: 'Choose image',
-                                    onPressed: _pickLogoImage,
-                                    icon: const Icon(
-                                      Icons.upload_file_outlined,
-                                    ),
-                                  ),
-                                  onChanged: (_) => setState(() {}),
-                                ),
-                                const SizedBox(height: 8),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: TextButton.icon(
-                                    onPressed: _pickLogoImage,
-                                    icon: const Icon(
-                                      Icons.add_photo_alternate_outlined,
-                                    ),
-                                    label: const Text('Upload profile image'),
-                                  ),
-                                ),
-                                const SizedBox(height: 20),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    'Theme Color',
-                                    style:
-                                        Theme.of(context).textTheme.titleMedium,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                Wrap(
-                                  spacing: 12,
-                                  runSpacing: 12,
-                                  children:
-                                      themeColorOptions.map((color) {
-                                        final colorValue = color.toARGB32();
-                                        final isSelected =
-                                            colorValue == _selectedColorValue;
-                                        return InkWell(
-                                          onTap:
-                                              () => setState(
-                                                () =>
-                                                    _selectedColorValue =
-                                                        colorValue,
-                                              ),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          child: Container(
-                                            width: 44,
-                                            height: 44,
-                                            decoration: BoxDecoration(
-                                              color: color,
-                                              shape: BoxShape.circle,
-                                              border: Border.all(
-                                                color:
-                                                    isSelected
-                                                        ? Colors.black
-                                                        : Colors.transparent,
-                                                width: 2,
-                                              ),
-                                            ),
-                                            child:
-                                                isSelected
-                                                    ? const Icon(
-                                                      Icons.check,
-                                                      color: Colors.white,
-                                                    )
-                                                    : null,
-                                          ),
-                                        );
-                                      }).toList(),
-                                ),
+                                Expanded(flex: 4, child: previewCard),
+                                const SizedBox(width: 24),
+                                Expanded(flex: 5, child: formFields),
                               ],
-                            ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 24),
+                        AppButton(
+                          text:
+                              widget.setupMode
+                                  ? 'SAVE AND START'
+                                  : 'SAVE PROFILE',
+                          onPressed: _saveProfile,
+                          isLoading: _isSaving,
+                          backgroundColor: primaryColor,
+                        ),
+                        if (!widget.setupMode) ...[
+                          const SizedBox(height: 12),
+                          TextButton.icon(
+                            onPressed: _resetLocalSetup,
+                            icon: const Icon(Icons.restart_alt),
+                            label: const Text('Reset local app setup'),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 24),
-                      AppButton(
-                        text:
-                            widget.setupMode
-                                ? 'SAVE AND START'
-                                : 'SAVE PROFILE',
-                        onPressed: _saveProfile,
-                        isLoading: _isSaving,
-                        backgroundColor: primaryColor,
-                      ),
-                      if (!widget.setupMode) ...[
-                        const SizedBox(height: 12),
-                        TextButton.icon(
-                          onPressed: _resetLocalSetup,
-                          icon: const Icon(Icons.restart_alt),
-                          label: const Text('Reset local app setup'),
+                        const SizedBox(height: 32),
+                        _UpiAccountsSection(
+                          accounts: _upiAccounts,
+                          isLoading: _isLoadingUpiAccounts,
+                          onAdd: () => _showUpiAccountSheet(),
+                          onEdit: _showUpiAccountSheet,
+                          onDelete: _deleteUpi,
+                          onMakeDefault: _setDefaultUpi,
                         ),
                       ],
-                      const SizedBox(height: 32),
-                      _UpiAccountsSection(
-                        accounts: _upiAccounts,
-                        isLoading: _isLoadingUpiAccounts,
-                        onAdd: () => _showUpiAccountSheet(),
-                        onEdit: _showUpiAccountSheet,
-                        onDelete: _deleteUpi,
-                        onMakeDefault: _setDefaultUpi,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -659,6 +855,110 @@ class _UpiAccountsSection extends StatelessWidget {
     required this.onMakeDefault,
   });
 
+  Widget _buildAccountCard(BuildContext context, _UpiAccountData account) {
+    final actionButtons = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        if (!account.isDefault)
+          IconButton(
+            tooltip: 'Set default',
+            onPressed: () => onMakeDefault(account),
+            icon: const Icon(Icons.star_outline),
+          ),
+        IconButton(
+          tooltip: 'Edit',
+          onPressed: () => onEdit(account),
+          icon: const Icon(Icons.edit_outlined),
+        ),
+        IconButton(
+          tooltip: 'Delete',
+          onPressed: () => onDelete(account),
+          icon: const Icon(Icons.delete_outline),
+        ),
+      ],
+    );
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 520;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.12),
+                      child: Icon(
+                        Icons.account_balance_wallet_outlined,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                account.label,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              if (account.isDefault)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: const Text(
+                                    'DEFAULT',
+                                    style: TextStyle(
+                                      color: Colors.green,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(account.upiId),
+                        ],
+                      ),
+                    ),
+                    if (!compact) actionButtons,
+                  ],
+                ),
+                if (compact) ...[
+                  const SizedBox(height: 12),
+                  Align(alignment: Alignment.centerRight, child: actionButtons),
+                ],
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -672,10 +972,12 @@ class _UpiAccountsSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compactHeader = constraints.maxWidth < 480;
+
+              if (compactHeader) {
+                return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
@@ -687,15 +989,42 @@ class _UpiAccountsSection extends StatelessWidget {
                       'Manage the UPI IDs used on the payment screen.',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      onPressed: onAdd,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add UPI'),
+                    ),
                   ],
-                ),
-              ),
-              FilledButton.icon(
-                onPressed: onAdd,
-                icon: const Icon(Icons.add),
-                label: const Text('Add UPI'),
-              ),
-            ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'UPI Accounts',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Manage the UPI IDs used on the payment screen.',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                  FilledButton.icon(
+                    onPressed: onAdd,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add UPI'),
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 16),
           if (isLoading)
@@ -706,78 +1035,7 @@ class _UpiAccountsSection extends StatelessWidget {
             Column(
               children:
                   accounts.map((account) {
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.primary.withValues(alpha: 0.12),
-                          child: Icon(
-                            Icons.account_balance_wallet_outlined,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                        title: Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                account.label,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                            if (account.isDefault) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.green.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: const Text(
-                                  'DEFAULT',
-                                  style: TextStyle(
-                                    color: Colors.green,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        subtitle: Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(account.upiId),
-                        ),
-                        trailing: Wrap(
-                          spacing: 8,
-                          children: [
-                            if (!account.isDefault)
-                              IconButton(
-                                tooltip: 'Set default',
-                                onPressed: () => onMakeDefault(account),
-                                icon: const Icon(Icons.star_outline),
-                              ),
-                            IconButton(
-                              tooltip: 'Edit',
-                              onPressed: () => onEdit(account),
-                              icon: const Icon(Icons.edit_outlined),
-                            ),
-                            IconButton(
-                              tooltip: 'Delete',
-                              onPressed: () => onDelete(account),
-                              icon: const Icon(Icons.delete_outline),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
+                    return _buildAccountCard(context, account);
                   }).toList(),
             ),
         ],

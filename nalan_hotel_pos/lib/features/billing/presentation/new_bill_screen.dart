@@ -118,44 +118,79 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen>
   Future<String?> _askPaymentMode() {
     return showModalBottomSheet<String>(
       context: context,
+      isScrollControlled: true,
       useRootNavigator: true,
       useSafeArea: true,
       builder: (sheetContext) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Select Payment Method',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        final mediaQuery = MediaQuery.of(sheetContext);
+
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              12,
+              12,
+              12,
+              mediaQuery.viewInsets.bottom + mediaQuery.padding.bottom + 20,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Select Payment Method',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  ListTile(
+                    leading: const Icon(Icons.money),
+                    title: const Text('Cash'),
+                    subtitle: const Text('Open direct cash payment'),
+                    onTap: () => Navigator.of(sheetContext).pop('CASH'),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.qr_code_2),
+                    title: const Text('UPI'),
+                    subtitle: const Text('Open full UPI payment'),
+                    onTap: () => Navigator.of(sheetContext).pop('UPI'),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.call_split),
+                    title: const Text('UPI + Cash'),
+                    subtitle: const Text(
+                      'Enter cash first, then collect balance by UPI',
+                    ),
+                    onTap: () => Navigator.of(sheetContext).pop('SPLIT'),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              ListTile(
-                leading: const Icon(Icons.money),
-                title: const Text('Cash'),
-                subtitle: const Text('Open direct cash payment'),
-                onTap: () => Navigator.of(sheetContext).pop('CASH'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.qr_code_2),
-                title: const Text('UPI'),
-                subtitle: const Text('Open full UPI payment'),
-                onTap: () => Navigator.of(sheetContext).pop('UPI'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.call_split),
-                title: const Text('UPI + Cash'),
-                subtitle: const Text(
-                  'Enter cash first, then collect balance by UPI',
-                ),
-                onTap: () => Navigator.of(sheetContext).pop('SPLIT'),
-              ),
-            ],
+            ),
           ),
         );
       },
     );
+  }
+
+  int _menuGridCount(double width) {
+    if (width >= 1200) {
+      return 4;
+    }
+    if (width >= 760) {
+      return 3;
+    }
+    if (width >= 320) {
+      return 2;
+    }
+    return 1;
+  }
+
+  double _menuChildAspectRatio(double width, int crossAxisCount) {
+    if (crossAxisCount == 1) {
+      return width < 340 ? 1.35 : 1.5;
+    }
+    if (crossAxisCount == 2) {
+      return width < 420 ? 1.18 : 1.28;
+    }
+    return width >= 1100 ? 1.18 : 1.08;
   }
 
   void _decrementOrRemoveItem(BillItem item) {
@@ -166,6 +201,29 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen>
         _currentBill.remove(item);
       }
     });
+  }
+
+  bool _isCustomBillItem(BillItem item) {
+    return item.menuRef.id < 0 &&
+        item.menuRef.category == _customCategory &&
+        item.menuRef.name == _customItemName;
+  }
+
+  Widget _buildRemoveBillItemButton(BillItem item) {
+    return TextButton.icon(
+      style: TextButton.styleFrom(
+        foregroundColor: Colors.red.shade700,
+        backgroundColor: Colors.red.shade50,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+      onPressed: () => _decrementOrRemoveItem(item),
+      icon: const Icon(Icons.delete_outline),
+      label: const Text(
+        'Remove',
+        style: TextStyle(fontWeight: FontWeight.w600),
+      ),
+    );
   }
 
   double get _billSubtotal =>
@@ -249,7 +307,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen>
         color: AppColors.surface,
         elevation: 1.5,
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -259,17 +317,17 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen>
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: primaryColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(icon, color: primaryColor),
                 )
               else
-                const SizedBox(height: 20),
+                const SizedBox(height: 8),
               Text(
                 title,
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
-                  fontSize: 15,
+                  fontSize: 13,
                 ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
@@ -279,7 +337,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen>
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
                   color: primaryColor,
-                  fontSize: 15,
+                  fontSize: 13,
                 ),
               ),
             ],
@@ -358,6 +416,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen>
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 260;
+        final isCustomItem = _isCustomBillItem(item);
 
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -389,33 +448,40 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen>
                       const SizedBox(height: 10),
                       Row(
                         children: [
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            icon: Icon(
-                              Icons.remove_circle_outline,
-                              color: primaryColor,
+                          if (isCustomItem)
+                            _buildRemoveBillItemButton(item)
+                          else ...[
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              icon: Icon(
+                                Icons.remove_circle_outline,
+                                color: primaryColor,
+                              ),
+                              onPressed: () => _decrementOrRemoveItem(item),
                             ),
-                            onPressed: () => _decrementOrRemoveItem(item),
-                          ),
-                          SizedBox(
-                            width: 24,
-                            child: Text(
-                              '${item.quantity}',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              child: Text(
+                                '${item.quantity}',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
-                          ),
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            icon: Icon(
-                              Icons.add_circle_outline,
-                              color: primaryColor,
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              icon: Icon(
+                                Icons.add_circle_outline,
+                                color: primaryColor,
+                              ),
+                              onPressed:
+                                  () => _addOrIncrementItem(item.menuRef),
                             ),
-                            onPressed: () => _addOrIncrementItem(item.menuRef),
-                          ),
+                          ],
                           const Spacer(),
                           Text(
                             AppFormatters.currencyExact(item.total),
@@ -452,42 +518,49 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen>
                           ],
                         ),
                       ),
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: Icon(
-                          Icons.remove_circle_outline,
-                          color: primaryColor,
+                      if (isCustomItem) ...[
+                        _buildRemoveBillItemButton(item),
+                        const SizedBox(width: 6),
+                      ] else ...[
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          icon: Icon(
+                            Icons.remove_circle_outline,
+                            color: primaryColor,
+                          ),
+                          onPressed: () => _decrementOrRemoveItem(item),
                         ),
-                        onPressed: () => _decrementOrRemoveItem(item),
-                      ),
-                      SizedBox(
-                        width: 28,
-                        child: Text(
-                          '${item.quantity}',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Text(
+                            '${item.quantity}',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      ),
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: Icon(
-                          Icons.add_circle_outline,
-                          color: primaryColor,
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          icon: Icon(
+                            Icons.add_circle_outline,
+                            color: primaryColor,
+                          ),
+                          onPressed: () => _addOrIncrementItem(item.menuRef),
                         ),
-                        onPressed: () => _addOrIncrementItem(item.menuRef),
-                      ),
-                      const SizedBox(width: 6),
-                      SizedBox(
-                        width: 76,
-                        child: Text(
-                          AppFormatters.currencyExact(item.total),
-                          textAlign: TextAlign.right,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
+                        const SizedBox(width: 6),
+                      ],
+                      Flexible(
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            AppFormatters.currencyExact(item.total),
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
                           ),
                         ),
                       ),
@@ -500,12 +573,14 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen>
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    final useSplitLayout = width >= 900;
-    final isNarrowScreen = width < 320;
+    final mediaQuery = MediaQuery.of(context);
+    final screenWidth = mediaQuery.size.width;
+    final bottomInset = mediaQuery.padding.bottom;
+    final useSplitLayout = screenWidth >= 900;
     final primaryColor = Theme.of(context).colorScheme.primary;
     final selectedCategory = _categories[_tabController.index];
     final categoryItems = _itemsForSelectedCategory();
+    final horizontalPadding = screenWidth < 600 ? 12.0 : 16.0;
 
     final menuSection = Column(
       children: [
@@ -531,51 +606,68 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen>
           ),
         ),
         Expanded(
-          child:
-              _isLoadingMenu
-                  ? const Center(child: CircularProgressIndicator())
-                  : selectedCategory == _customCategory
-                  ? _buildCustomAmountPanel(primaryColor)
-                  : GridView.builder(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount:
-                          useSplitLayout ? 3 : (isNarrowScreen ? 1 : 2),
-                      childAspectRatio: isNarrowScreen ? 1.2 : 1.45,
-                      crossAxisSpacing: 10,
-                      mainAxisSpacing: 10,
-                    ),
-                    itemCount: categoryItems.length,
-                    itemBuilder: (context, index) {
-                      final item = categoryItems[index];
-                      return _buildMenuCard(
-                        onTap: () => _addOrIncrementItem(item),
-                        title: item.name,
-                        subtitle: AppFormatters.currencyExact(item.price),
-                        primaryColor: primaryColor,
-                      );
-                    },
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              if (_isLoadingMenu) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (selectedCategory == _customCategory) {
+                return _buildCustomAmountPanel(primaryColor);
+              }
+
+              final contentWidth = constraints.maxWidth;
+              final crossAxisCount = _menuGridCount(contentWidth);
+
+              return GridView.builder(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  childAspectRatio: _menuChildAspectRatio(
+                    contentWidth,
+                    crossAxisCount,
                   ),
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                ),
+                itemCount: categoryItems.length,
+                itemBuilder: (context, index) {
+                  final item = categoryItems[index];
+                  return _buildMenuCard(
+                    onTap: () => _addOrIncrementItem(item),
+                    title: item.name,
+                    subtitle: AppFormatters.currencyExact(item.price),
+                    primaryColor: primaryColor,
+                  );
+                },
+              );
+            },
+          ),
         ),
       ],
     );
 
     final billSection = Container(
       color: Colors.white,
-      width: useSplitLayout ? 350 : double.infinity,
       child: Column(
         children: [
           Container(
             padding: const EdgeInsets.all(16),
             color: Colors.grey.shade100,
-            child: const Row(
+            child: Row(
               children: [
-                Icon(Icons.receipt_long),
-                SizedBox(width: 8),
-                Text(
+                const Icon(Icons.receipt_long),
+                const SizedBox(width: 8),
+                const Text(
                   'Current Bill',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
+                const Spacer(),
+                if (_currentBill.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () => setState(() => _currentBill.clear()),
+                    icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                    label: const Text('Clear'),
+                  ),
               ],
             ),
           ),
@@ -600,7 +692,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen>
                     ),
           ),
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
             decoration: BoxDecoration(
               color: Colors.white,
               boxShadow: [
@@ -614,19 +706,22 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen>
             child: Column(
               children: [
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'TOTAL',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+                    const Expanded(
+                      child: Text(
+                        'TOTAL',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
+                    const SizedBox(width: 12),
                     Text(
                       AppFormatters.currencyExact(_billSubtotal),
                       style: TextStyle(
-                        fontSize: 24,
+                        fontSize: 20,
                         fontWeight: FontWeight.w900,
                         color: primaryColor,
                       ),
@@ -648,32 +743,38 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen>
       ),
     );
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('New Bill'),
-        actions: [
-          if (_currentBill.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.delete_sweep),
-              onPressed: () {
-                setState(() => _currentBill.clear());
-              },
-              tooltip: 'Clear Bill',
+    return SafeArea(
+      child: Scaffold(
+        resizeToAvoidBottomInset: true,
+        appBar: AppBar(title: const Text('New Bill')),
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1240),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                horizontalPadding,
+                horizontalPadding,
+                useSplitLayout ? horizontalPadding : 0,
+              ),
+              child:
+                  useSplitLayout
+                      ? Row(
+                        children: [
+                          Expanded(flex: 7, child: menuSection),
+                          const SizedBox(width: 16),
+                          Expanded(flex: 4, child: billSection),
+                        ],
+                      )
+                      : Column(
+                        children: [
+                          Expanded(flex: 6, child: menuSection),
+                          const SizedBox(height: 12),
+                          Expanded(flex: 5, child: billSection),
+                        ],
+                      ),
             ),
-        ],
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: useSplitLayout ? 1000 : 560),
-          child:
-              useSplitLayout
-                  ? Row(children: [Expanded(child: menuSection), billSection])
-                  : Column(
-                    children: [
-                      Expanded(flex: 5, child: menuSection),
-                      Expanded(flex: 6, child: billSection),
-                    ],
-                  ),
+          ),
         ),
       ),
     );

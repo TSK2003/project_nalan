@@ -1,6 +1,7 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fl_chart/fl_chart.dart';
+
 import '../../../core/data/pos_data_service.dart';
 import '../../../core/utils/formatters.dart';
 
@@ -36,7 +37,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
         _summary = response;
         _isLoading = false;
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) {
         return;
       }
@@ -103,9 +104,32 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     await _fetchSummary();
   }
 
+  int _metricGridCount(double width) {
+    if (width >= 1080) {
+      return 4;
+    }
+    if (width >= 640) {
+      return 2;
+    }
+    return 1;
+  }
+
+  double _metricAspectRatio(double width, int crossAxisCount) {
+    if (crossAxisCount == 1) {
+      return width < 420 ? 2.8 : 3.2;
+    }
+    if (crossAxisCount == 2) {
+      return width < 840 ? 1.55 : 1.8;
+    }
+    return 1.4;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final screenWidth = mediaQuery.size.width;
     final primaryColor = Theme.of(context).colorScheme.primary;
+    final outerPadding = screenWidth < 600 ? 12.0 : 16.0;
     final isRangeMode = _fromDate != null && _toDate != null;
     final summaryLabel =
         isRangeMode && _summary != null
@@ -114,220 +138,269 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
             ? 'Date: ${AppFormatters.date(DateTime.parse(_summary!['date']))}'
             : 'Date: Today';
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Summary'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              setState(() => _isLoading = true);
-              _fetchSummary();
-            },
-          ),
-        ],
+    final metricCards = <Widget>[
+      _summaryCard(
+        'Total Sales',
+        AppFormatters.currencyExact(
+          double.parse(_summary?['total_sales'].toString() ?? '0'),
+        ),
+        Icons.payments,
+        color: primaryColor,
       ),
-      body:
-          _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _summary == null
-              ? const Center(child: Text('Failed to load summary'))
-              : SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.grey.shade200),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Date Filter',
-                            style: Theme.of(context).textTheme.titleMedium,
+      _summaryCard(
+        'Total Bills',
+        _summary?['total_bills'].toString() ?? '0',
+        Icons.receipt,
+        color: primaryColor,
+      ),
+      _summaryCard(
+        'Cash',
+        AppFormatters.currencyExact(
+          double.parse(_summary?['cash_total'].toString() ?? '0'),
+        ),
+        Icons.money,
+        color: Colors.green,
+      ),
+      _summaryCard(
+        'UPI',
+        AppFormatters.currencyExact(
+          double.parse(_summary?['upi_total'].toString() ?? '0'),
+        ),
+        Icons.qr_code_2,
+        color: Colors.blue,
+      ),
+    ];
+
+    if (double.parse(_summary?['split_total'].toString() ?? '0') > 0) {
+      metricCards.add(
+        _summaryCard(
+          'Split Payment Total',
+          AppFormatters.currencyExact(
+            double.parse(_summary!['split_total'].toString()),
+          ),
+          Icons.call_split_outlined,
+          color: Colors.purple,
+        ),
+      );
+    }
+
+    return SafeArea(
+      child: Scaffold(
+        resizeToAvoidBottomInset: true,
+        appBar: AppBar(
+          title: const Text('Summary'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: () {
+                setState(() => _isLoading = true);
+                _fetchSummary();
+              },
+            ),
+          ],
+        ),
+        body:
+            _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _summary == null
+                ? const Center(child: Text('Failed to load summary'))
+                : Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1200),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final metricGridCount = _metricGridCount(
+                          constraints.maxWidth,
+                        );
+                        final chartSize = (constraints.maxWidth *
+                                (constraints.maxWidth < 700 ? 0.72 : 0.34))
+                            .clamp(220.0, 320.0);
+
+                        return SingleChildScrollView(
+                          padding: EdgeInsets.fromLTRB(
+                            outerPadding,
+                            outerPadding,
+                            outerPadding,
+                            outerPadding + mediaQuery.padding.bottom,
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            summaryLabel,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Wrap(
-                            spacing: 12,
-                            runSpacing: 12,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              OutlinedButton.icon(
-                                onPressed: () => _pickDate(isFrom: true),
-                                icon: const Icon(Icons.date_range_outlined),
-                                label: Text(
-                                  _fromDate == null
-                                      ? 'From'
-                                      : AppFormatters.date(_fromDate!),
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: Colors.grey.shade200,
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Date Filter',
+                                      style:
+                                          Theme.of(
+                                            context,
+                                          ).textTheme.titleMedium,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      summaryLabel,
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Wrap(
+                                      spacing: 12,
+                                      runSpacing: 12,
+                                      children: [
+                                        OutlinedButton.icon(
+                                          onPressed:
+                                              () => _pickDate(isFrom: true),
+                                          icon: const Icon(
+                                            Icons.date_range_outlined,
+                                          ),
+                                          label: Text(
+                                            _fromDate == null
+                                                ? 'From'
+                                                : AppFormatters.date(
+                                                  _fromDate!,
+                                                ),
+                                          ),
+                                        ),
+                                        OutlinedButton.icon(
+                                          onPressed:
+                                              () => _pickDate(isFrom: false),
+                                          icon: const Icon(
+                                            Icons.event_outlined,
+                                          ),
+                                          label: Text(
+                                            _toDate == null
+                                                ? 'To'
+                                                : AppFormatters.date(_toDate!),
+                                          ),
+                                        ),
+                                        FilledButton(
+                                          onPressed: _applyDateRange,
+                                          child: const Text('Apply'),
+                                        ),
+                                        TextButton(
+                                          onPressed: _resetToToday,
+                                          child: const Text('Today'),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ),
                               ),
-                              OutlinedButton.icon(
-                                onPressed: () => _pickDate(isFrom: false),
-                                icon: const Icon(Icons.event_outlined),
-                                label: Text(
-                                  _toDate == null
-                                      ? 'To'
-                                      : AppFormatters.date(_toDate!),
+                              const SizedBox(height: 16),
+                              GridView.builder(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: metricGridCount,
+                                      crossAxisSpacing: 12,
+                                      mainAxisSpacing: 12,
+                                      childAspectRatio: _metricAspectRatio(
+                                        constraints.maxWidth,
+                                        metricGridCount,
+                                      ),
+                                    ),
+                                itemCount: metricCards.length,
+                                itemBuilder: (context, index) {
+                                  return metricCards[index];
+                                },
+                              ),
+                              const SizedBox(height: 24),
+                              const Text(
+                                'Category Breakdown',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              FilledButton(
-                                onPressed: _applyDateRange,
-                                child: const Text('Apply'),
-                              ),
-                              TextButton(
-                                onPressed: _resetToToday,
-                                child: const Text('Today'),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _summaryCard(
-                            'Total Sales',
-                            AppFormatters.currencyExact(
-                              double.parse(_summary!['total_sales'].toString()),
-                            ),
-                            Icons.payments,
-                            color: primaryColor,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _summaryCard(
-                            'Total Bills',
-                            _summary!['total_bills'].toString(),
-                            Icons.receipt,
-                            color: primaryColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _summaryCard(
-                            'Cash',
-                            AppFormatters.currencyExact(
-                              double.parse(_summary!['cash_total'].toString()),
-                            ),
-                            Icons.money,
-                            color: Colors.green,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _summaryCard(
-                            'UPI',
-                            AppFormatters.currencyExact(
-                              double.parse(_summary!['upi_total'].toString()),
-                            ),
-                            Icons.qr_code_2,
-                            color: Colors.blue,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    if (double.parse(_summary!['split_total'].toString()) > 0)
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _summaryCard(
-                              'Split Payment Total',
-                              AppFormatters.currencyExact(
-                                double.parse(
-                                  _summary!['split_total'].toString(),
+                              const SizedBox(height: 16),
+                              if ((_summary!['category_breakdown'] as Map)
+                                  .isEmpty)
+                                const Text('No sales yet for today.')
+                              else ...[
+                                Center(
+                                  child: SizedBox(
+                                    width: chartSize,
+                                    height: chartSize,
+                                    child: PieChart(
+                                      PieChartData(
+                                        sectionsSpace: 2,
+                                        centerSpaceRadius: chartSize * 0.18,
+                                        sections:
+                                            (_summary!['category_breakdown']
+                                                    as Map)
+                                                .entries
+                                                .map((e) {
+                                                  final color =
+                                                      _getCategoryColor(e.key);
+                                                  final pct =
+                                                      double.tryParse(
+                                                        e.value['percentage']
+                                                            .toString(),
+                                                      ) ??
+                                                      0;
+                                                  return PieChartSectionData(
+                                                    color: color,
+                                                    value: pct,
+                                                    title: '$pct%',
+                                                    radius: chartSize * 0.23,
+                                                    titleStyle: const TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: Colors.white,
+                                                    ),
+                                                  );
+                                                })
+                                                .toList(),
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                              ),
-                              Icons.call_split_outlined,
-                              color: Colors.purple,
-                            ),
-                          ),
-                        ],
-                      ),
-                    const SizedBox(height: 24),
-                    const Text(
-                      'Category Breakdown',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    if ((_summary!['category_breakdown'] as Map).isEmpty)
-                      const Text('No sales yet for today.')
-                    else
-                      SizedBox(
-                        height: 200,
-                        child: PieChart(
-                          PieChartData(
-                            sectionsSpace: 2,
-                            centerSpaceRadius: 40,
-                            sections:
-                                (_summary!['category_breakdown'] as Map).entries
+                                const SizedBox(height: 16),
+                                ...(_summary!['category_breakdown'] as Map)
+                                    .entries
                                     .map((e) {
-                                      final color = _getCategoryColor(e.key);
-                                      final pct =
-                                          double.tryParse(
-                                            e.value['percentage'].toString(),
-                                          ) ??
-                                          0;
-                                      return PieChartSectionData(
-                                        color: color,
-                                        value: pct,
-                                        title: '$pct%',
-                                        radius: 50,
-                                        titleStyle: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
+                                      return ListTile(
+                                        contentPadding: EdgeInsets.zero,
+                                        leading: Container(
+                                          width: 16,
+                                          height: 16,
+                                          color: _getCategoryColor(e.key),
+                                        ),
+                                        title: Text(e.key),
+                                        trailing: Text(
+                                          AppFormatters.currencyExact(
+                                            double.parse(
+                                              e.value['total'].toString(),
+                                            ),
+                                          ),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
                                       );
-                                    })
-                                    .toList(),
+                                    }),
+                              ],
+                            ],
                           ),
-                        ),
-                      ),
-                    const SizedBox(height: 16),
-                    ...(_summary!['category_breakdown'] as Map).entries.map((
-                      e,
-                    ) {
-                      return ListTile(
-                        leading: Container(
-                          width: 16,
-                          height: 16,
-                          color: _getCategoryColor(e.key),
-                        ),
-                        title: Text(e.key),
-                        trailing: Text(
-                          AppFormatters.currencyExact(
-                            double.parse(e.value['total'].toString()),
-                          ),
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      );
-                    }),
-                  ],
+                        );
+                      },
+                    ),
+                  ),
                 ),
-              ),
+      ),
     );
   }
 
@@ -342,8 +415,9 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     return Card(
       elevation: 2,
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, color: cardColor, size: 32),
             const SizedBox(height: 8),
@@ -351,6 +425,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
             const SizedBox(height: 4),
             Text(
               value,
+              textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,

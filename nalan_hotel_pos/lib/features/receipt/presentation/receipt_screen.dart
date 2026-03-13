@@ -195,25 +195,30 @@ class _ReceiptScreenState extends ConsumerState<ReceiptScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const SafeArea(
+        child: Scaffold(body: Center(child: CircularProgressIndicator())),
+      );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Receipt'),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => context.go('/billing'),
+    return SafeArea(
+      child: Scaffold(
+        resizeToAvoidBottomInset: true,
+        appBar: AppBar(
+          title: const Text('Receipt'),
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => context.go('/billing'),
+          ),
         ),
-      ),
-      body: PdfPreview(
-        build: (format) => _generatePdf(format),
-        initialPageFormat: PdfPageFormat.roll80,
-        pdfFileName: '${_bill!['bill_number']}.pdf',
-        canChangeOrientation: false,
-        canChangePageFormat: false,
-        allowPrinting: true,
-        allowSharing: true,
+        body: PdfPreview(
+          build: (format) => _generatePdf(format),
+          initialPageFormat: PdfPageFormat.roll80,
+          pdfFileName: '${_bill!['bill_number']}.pdf',
+          canChangeOrientation: false,
+          canChangePageFormat: false,
+          allowPrinting: true,
+          allowSharing: true,
+        ),
       ),
     );
   }

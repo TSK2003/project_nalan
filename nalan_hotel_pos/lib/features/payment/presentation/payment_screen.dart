@@ -74,6 +74,28 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
     return remaining > 0 ? remaining : 0;
   }
 
+  List<Map<String, dynamic>> _billItems() {
+    final items = _bill?['items'];
+    if (items is! List) {
+      return const [];
+    }
+    return items.whereType<Map>().map((item) {
+      return Map<String, dynamic>.from(item);
+    }).toList();
+  }
+
+  String _itemName(Map<String, dynamic> item) {
+    return (item['item_name'] ?? item['name'] ?? 'Item').toString();
+  }
+
+  int _itemQuantity(Map<String, dynamic> item) {
+    return int.tryParse(item['quantity']?.toString() ?? '') ?? 0;
+  }
+
+  double _itemLineTotal(Map<String, dynamic> item) {
+    return _parseAmount(item['line_total'] ?? item['total']);
+  }
+
   Future<void> _fetchBill() async {
     try {
       final bill = await PosDataService.instance.getBill(widget.billId);
@@ -285,8 +307,40 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
     }
   }
 
-  Future<void> _simulateWebhookSuccess() async {
-    await PosDataService.instance.simulateUpiWebhookSuccess(widget.billId);
+  Future<void> _confirmPendingUpiPayment() async {
+    if (_isProcessing) {
+      return;
+    }
+
+    setState(() => _isProcessing = true);
+    try {
+      await PosDataService.instance.simulateUpiWebhookSuccess(widget.billId);
+      final response = await PosDataService.instance.paymentStatus(
+        widget.billId,
+      );
+      if (!mounted) {
+        return;
+      }
+
+      if (response['status'] == 'PAID') {
+        context.go('/receipt/${widget.billId}');
+        return;
+      }
+
+      setState(() {
+        _upiQrString = response['upi_qr_string'] as String?;
+        _bill = {...?_bill, ...response};
+        _isProcessing = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isProcessing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to confirm payment')),
+      );
+    }
   }
 
   void _startPolling() {
@@ -341,6 +395,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
 
     return DropdownButtonFormField<int>(
       initialValue: _selectedUpiAccountId,
+      isExpanded: true,
       decoration: const InputDecoration(
         labelText: 'UPI Account',
         prefixIcon: Icon(Icons.account_balance_wallet_outlined),
@@ -352,6 +407,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
               child: Text(
                 '${account['label']} (${account['upi_id']})'
                 '${account['is_default'] == true ? ' • Default' : ''}',
+                overflow: TextOverflow.ellipsis,
               ),
             );
           }).toList(),
@@ -370,6 +426,9 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
     required String heading,
     String? note,
   }) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final qrSize = (screenWidth * 0.5).clamp(180.0, 280.0);
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -389,7 +448,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
           child: QrImageView(
             data: _upiQrString!,
             version: QrVersions.auto,
-            size: 210,
+            size: qrSize,
           ),
         ),
         const SizedBox(height: 12),
@@ -421,10 +480,61 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
         ],
         const SizedBox(height: 14),
         OutlinedButton(
-          onPressed: _simulateWebhookSuccess,
-          child: const Text('Simulate Webhook Success (Phase 1 Only)'),
+          onPressed: _isProcessing ? null : _confirmPendingUpiPayment,
+          child: const Text('CONFIRM PAYMENT'),
         ),
       ],
+    );
+  }
+
+  Widget _buildBillItemsSection({required Color primaryColor}) {
+    final items = _billItems();
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return _buildSectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.receipt_long_outlined, color: primaryColor),
+              const SizedBox(width: 8),
+              const Text(
+                'Bill Items',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...items.map((item) {
+            final quantity = _itemQuantity(item);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      '$quantity x ${_itemName(item)}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    AppFormatters.currencyExact(_itemLineTotal(item)),
+                    style: TextStyle(
+                      color: primaryColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
     );
   }
 
@@ -525,10 +635,16 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Cash Portion',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  const Expanded(
+                    child: Text(
+                      'Cash Portion',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
+                  const SizedBox(width: 12),
                   Text(
                     AppFormatters.currencyExact(cashAmount),
                     style: TextStyle(
@@ -543,10 +659,16 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'UPI Portion',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  const Expanded(
+                    child: Text(
+                      'UPI Portion',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
+                  const SizedBox(width: 12),
                   Text(
                     AppFormatters.currencyExact(upiAmount),
                     style: TextStyle(
@@ -593,36 +715,54 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
       content = _buildSplitDetails(total, primaryColor: primaryColor);
     }
 
-    return Padding(
-      padding: const EdgeInsets.all(18),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Text(
-                    'Total Amount',
-                    style: TextStyle(fontSize: 16, color: Colors.grey.shade700),
+    final mediaQuery = MediaQuery.of(context);
+    final outerPadding = mediaQuery.size.width < 600 ? 16.0 : 20.0;
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 960),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            outerPadding,
+            outerPadding,
+            outerPadding,
+            outerPadding + mediaQuery.padding.bottom,
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Total Amount',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        AppFormatters.currencyExact(total),
+                        style: TextStyle(
+                          fontSize: constraints.maxWidth < 420 ? 28 : 34,
+                          fontWeight: FontWeight.w900,
+                          color: primaryColor,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      _buildBillItemsSection(primaryColor: primaryColor),
+                      if (_billItems().isNotEmpty) const SizedBox(height: 18),
+                      content,
+                    ],
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    AppFormatters.currencyExact(total),
-                    style: TextStyle(
-                      fontSize: 38,
-                      fontWeight: FontWeight.w900,
-                      color: primaryColor,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  content,
-                ],
-              ),
-            ),
-          );
-        },
+                ),
+              );
+            },
+          ),
+        ),
       ),
     );
   }
@@ -632,13 +772,18 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
     final primaryColor = Theme.of(context).colorScheme.primary;
 
     if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const SafeArea(
+        child: Scaffold(body: Center(child: CircularProgressIndicator())),
+      );
     }
 
     final total = _billTotal();
-    return Scaffold(
-      appBar: AppBar(title: const Text('Payment')),
-      body: _buildPaymentDetails(total, primaryColor: primaryColor),
+    return SafeArea(
+      child: Scaffold(
+        resizeToAvoidBottomInset: true,
+        appBar: AppBar(title: const Text('Payment')),
+        body: _buildPaymentDetails(total, primaryColor: primaryColor),
+      ),
     );
   }
 

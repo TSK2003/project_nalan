@@ -45,9 +45,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
 
     try {
-      final username = _usernameController.text.trim();
+      final mobileNumber = _usernameController.text.trim();
       final data = await PosDataService.instance.login(
-        username: username,
+        username: mobileNumber,
         password: _passwordController.text,
       );
       await ref
@@ -75,89 +75,105 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final screenWidth = mediaQuery.size.width;
+
     if (_isLoading && _usernameController.text.isEmpty) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
+      return const SafeArea(
+        child: Scaffold(
+          body: Center(
+            child: CircularProgressIndicator(color: AppColors.primary),
+          ),
         ),
       );
     }
 
-    return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.restaurant,
-                        size: 64,
-                        color: AppColors.primary,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Nalan Hotel POS',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
+    return SafeArea(
+      child: Scaffold(
+        resizeToAvoidBottomInset: true,
+        body: Center(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              24,
+              24,
+              24,
+              24 + mediaQuery.padding.bottom,
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: screenWidth < 480 ? screenWidth : 420,
+              ),
+              child: Card(
+                elevation: 4,
+                child: Padding(
+                  padding: EdgeInsets.all(screenWidth < 480 ? 24 : 32),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.restaurant,
+                          size: 64,
                           color: AppColors.primary,
                         ),
-                      ),
-                      const SizedBox(height: 32),
-                      if (_errorMessage != null) ...[
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: AppColors.error.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            _errorMessage!,
-                            style: const TextStyle(color: AppColors.error),
-                            textAlign: TextAlign.center,
+                        const SizedBox(height: 16),
+                        Text(
+                          'Nalan Hotel POS',
+                          style: Theme.of(
+                            context,
+                          ).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
                           ),
                         ),
+                        const SizedBox(height: 32),
+                        if (_errorMessage != null) ...[
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppColors.error.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              _errorMessage!,
+                              style: const TextStyle(color: AppColors.error),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                        AppTextField(
+                          controller: _usernameController,
+                          label: 'Mobile Number',
+                          prefixIcon: Icons.phone_android_outlined,
+                          keyboardType: TextInputType.phone,
+                          validator:
+                              (value) =>
+                                  value == null || value.isEmpty
+                                      ? 'Required'
+                                      : null,
+                        ),
                         const SizedBox(height: 16),
+                        AppTextField(
+                          controller: _passwordController,
+                          label: 'Password',
+                          prefixIcon: Icons.lock_outline,
+                          obscureText: true,
+                          validator:
+                              (value) =>
+                                  value == null || value.isEmpty
+                                      ? 'Required'
+                                      : null,
+                        ),
+                        const SizedBox(height: 32),
+                        AppButton(
+                          text: 'Login',
+                          onPressed: _login,
+                          isLoading: _isLoading,
+                        ),
                       ],
-                      AppTextField(
-                        controller: _usernameController,
-                        label: 'Username',
-                        prefixIcon: Icons.person_outline,
-                        validator:
-                            (value) =>
-                                value == null || value.isEmpty
-                                    ? 'Required'
-                                    : null,
-                      ),
-                      const SizedBox(height: 16),
-                      AppTextField(
-                        controller: _passwordController,
-                        label: 'Password',
-                        prefixIcon: Icons.lock_outline,
-                        obscureText: true,
-                        validator:
-                            (value) =>
-                                value == null || value.isEmpty
-                                    ? 'Required'
-                                    : null,
-                      ),
-                      const SizedBox(height: 32),
-                      AppButton(
-                        text: 'Login',
-                        onPressed: _login,
-                        isLoading: _isLoading,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),

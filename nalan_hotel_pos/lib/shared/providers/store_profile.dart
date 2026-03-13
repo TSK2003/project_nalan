@@ -11,6 +11,7 @@ class StoreProfileState {
   final String tagline;
   final String address;
   final String phone;
+  final String loginMobileNumber;
   final String logoPath;
   final int primaryColorValue;
 
@@ -21,6 +22,7 @@ class StoreProfileState {
     required this.tagline,
     required this.address,
     required this.phone,
+    required this.loginMobileNumber,
     required this.logoPath,
     required this.primaryColorValue,
   });
@@ -32,6 +34,7 @@ class StoreProfileState {
       tagline = 'Configure your store profile',
       address = '',
       phone = '',
+      loginMobileNumber = '',
       logoPath = '',
       primaryColorValue = 0xFFE65100;
 
@@ -44,6 +47,7 @@ class StoreProfileState {
     String? tagline,
     String? address,
     String? phone,
+    String? loginMobileNumber,
     String? logoPath,
     int? primaryColorValue,
   }) {
@@ -54,6 +58,7 @@ class StoreProfileState {
       tagline: tagline ?? this.tagline,
       address: address ?? this.address,
       phone: phone ?? this.phone,
+      loginMobileNumber: loginMobileNumber ?? this.loginMobileNumber,
       logoPath: logoPath ?? this.logoPath,
       primaryColorValue: primaryColorValue ?? this.primaryColorValue,
     );
@@ -65,6 +70,7 @@ class StoreProfileState {
       'tagline': tagline,
       'address': address,
       'phone': phone,
+      'loginMobileNumber': loginMobileNumber,
       'logoPath': logoPath,
       'primaryColorValue': primaryColorValue,
     };
@@ -78,6 +84,7 @@ class StoreProfileState {
       tagline: json['tagline'] as String? ?? '',
       address: json['address'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
+      loginMobileNumber: json['loginMobileNumber'] as String? ?? '',
       logoPath: json['logoPath'] as String? ?? '',
       primaryColorValue: json['primaryColorValue'] as int? ?? 0xFFE65100,
     );

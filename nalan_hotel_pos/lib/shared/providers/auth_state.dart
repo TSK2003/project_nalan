@@ -30,26 +30,38 @@ class AuthStateData {
 }
 
 class AuthNotifier extends StateNotifier<AuthStateData> {
+  static const _accessTokenKey = 'access_token';
+  static const _refreshTokenKey = 'refresh_token';
+  static const _cashierNameKey = 'cashier_name';
+  static const _userIdKey = 'user_id';
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
   AuthNotifier() : super(AuthStateData());
 
   Future<void> checkAuth() async {
-    final token = await _storage.read(key: 'access_token');
-    final name = await _storage.read(key: 'cashier_name');
+    final token = await _storage.read(key: _accessTokenKey);
+    final name = await _storage.read(key: _cashierNameKey);
+    final userId = await _storage.read(key: _userIdKey);
     if (token != null) {
       state = AuthStateData(
         isAuthenticated: true,
         token: token,
         cashierName: name,
+        userId: int.tryParse(userId ?? ''),
       );
     }
   }
 
-  Future<void> login(String token, String refreshToken, String cashierName, int userId) async {
-    await _storage.write(key: 'access_token', value: token);
-    await _storage.write(key: 'refresh_token', value: refreshToken);
-    await _storage.write(key: 'cashier_name', value: cashierName);
+  Future<void> login(
+    String token,
+    String refreshToken,
+    String cashierName,
+    int userId,
+  ) async {
+    await _storage.write(key: _accessTokenKey, value: token);
+    await _storage.write(key: _refreshTokenKey, value: refreshToken);
+    await _storage.write(key: _cashierNameKey, value: cashierName);
+    await _storage.write(key: _userIdKey, value: userId.toString());
     state = AuthStateData(
       isAuthenticated: true,
       token: token,
@@ -59,7 +71,10 @@ class AuthNotifier extends StateNotifier<AuthStateData> {
   }
 
   Future<void> logout() async {
-    await _storage.deleteAll();
+    await _storage.delete(key: _accessTokenKey);
+    await _storage.delete(key: _refreshTokenKey);
+    await _storage.delete(key: _cashierNameKey);
+    await _storage.delete(key: _userIdKey);
     state = AuthStateData();
   }
 }
