@@ -15,13 +15,30 @@ import 'features/summary/presentation/summary_screen.dart';
 import 'shared/providers/auth_state.dart';
 import 'shared/providers/store_profile.dart';
 
+class _RouterRefreshNotifier extends ChangeNotifier {
+  void refresh() => notifyListeners();
+}
+
+final _routerRefreshProvider = Provider<_RouterRefreshNotifier>((ref) {
+  final notifier = _RouterRefreshNotifier();
+  ref.listen<AuthStateData>(authProvider, (_, __) => notifier.refresh());
+  ref.listen<StoreProfileState>(
+    storeProfileProvider,
+    (_, __) => notifier.refresh(),
+  );
+  ref.onDispose(notifier.dispose);
+  return notifier;
+});
+
 final appRouterProvider = Provider<GoRouter>((ref) {
-  final profile = ref.watch(storeProfileProvider);
-  final auth = ref.watch(authProvider);
+  final routerRefresh = ref.watch(_routerRefreshProvider);
 
   return GoRouter(
     initialLocation: '/',
+    refreshListenable: routerRefresh,
     redirect: (context, state) {
+      final profile = ref.read(storeProfileProvider);
+      final auth = ref.read(authProvider);
       final location = state.matchedLocation;
       final isRoot = location == '/';
       final isSetup = location == '/setup';
@@ -94,11 +111,36 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   );
 });
 
-class NalanHotelApp extends ConsumerWidget {
+class NalanHotelApp extends ConsumerStatefulWidget {
   const NalanHotelApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NalanHotelApp> createState() => _NalanHotelAppState();
+}
+
+class _NalanHotelAppState extends ConsumerState<NalanHotelApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.read(authProvider.notifier).checkAuth();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final profile = ref.watch(storeProfileProvider);
     final primaryColor = profile.primaryColor;
     final router = ref.watch(appRouterProvider);
@@ -189,6 +231,26 @@ class _RouterSplash extends StatelessWidget {
   }
 }
 
+class _AppBrandFooter extends StatelessWidget {
+  const _AppBrandFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 2),
+      child: Text(
+        'AESCION Edtech Solutions',
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+          color: Colors.grey.shade600,
+        ),
+      ),
+    );
+  }
+}
+
 class MainShell extends StatefulWidget {
   final Widget child;
 
@@ -233,6 +295,7 @@ class _MainShellState extends State<MainShell> {
           ),
           child: Container(
             decoration: BoxDecoration(
+              color: Colors.white,
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.1),
@@ -241,42 +304,51 @@ class _MainShellState extends State<MainShell> {
                 ),
               ],
             ),
-            child: NavigationBar(
-              selectedIndex: _currentIndex,
-              onDestinationSelected: (index) {
-                setState(() => _currentIndex = index);
-                context.go(_paths[index]);
-              },
-              backgroundColor: Colors.white,
-              indicatorColor: primaryColor.withValues(alpha: 0.15),
-              destinations: [
-                NavigationDestination(
-                  icon: const Icon(Icons.receipt_long_outlined),
-                  selectedIcon: Icon(Icons.receipt_long, color: primaryColor),
-                  label: 'Billing',
-                ),
-                NavigationDestination(
-                  icon: const Icon(Icons.restaurant_menu_outlined),
-                  selectedIcon: Icon(
-                    Icons.restaurant_menu,
-                    color: primaryColor,
-                  ),
-                  label: 'Menu',
-                ),
-                NavigationDestination(
-                  icon: const Icon(Icons.history_outlined),
-                  selectedIcon: Icon(Icons.history, color: primaryColor),
-                  label: 'History',
-                ),
-                NavigationDestination(
-                  icon: const Icon(Icons.bar_chart_outlined),
-                  selectedIcon: Icon(Icons.bar_chart, color: primaryColor),
-                  label: 'Summary',
-                ),
-                NavigationDestination(
-                  icon: const Icon(Icons.storefront_outlined),
-                  selectedIcon: Icon(Icons.storefront, color: primaryColor),
-                  label: 'Profile',
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const _AppBrandFooter(),
+                NavigationBar(
+                  selectedIndex: _currentIndex,
+                  onDestinationSelected: (index) {
+                    setState(() => _currentIndex = index);
+                    context.go(_paths[index]);
+                  },
+                  backgroundColor: Colors.white,
+                  indicatorColor: primaryColor.withValues(alpha: 0.15),
+                  destinations: [
+                    NavigationDestination(
+                      icon: const Icon(Icons.receipt_long_outlined),
+                      selectedIcon: Icon(
+                        Icons.receipt_long,
+                        color: primaryColor,
+                      ),
+                      label: 'Billing',
+                    ),
+                    NavigationDestination(
+                      icon: const Icon(Icons.restaurant_menu_outlined),
+                      selectedIcon: Icon(
+                        Icons.restaurant_menu,
+                        color: primaryColor,
+                      ),
+                      label: 'Menu',
+                    ),
+                    NavigationDestination(
+                      icon: const Icon(Icons.history_outlined),
+                      selectedIcon: Icon(Icons.history, color: primaryColor),
+                      label: 'History',
+                    ),
+                    NavigationDestination(
+                      icon: const Icon(Icons.bar_chart_outlined),
+                      selectedIcon: Icon(Icons.bar_chart, color: primaryColor),
+                      label: 'Summary',
+                    ),
+                    NavigationDestination(
+                      icon: const Icon(Icons.storefront_outlined),
+                      selectedIcon: Icon(Icons.storefront, color: primaryColor),
+                      label: 'Profile',
+                    ),
+                  ],
                 ),
               ],
             ),

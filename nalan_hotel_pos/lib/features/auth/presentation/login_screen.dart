@@ -471,6 +471,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      Center(
+                        child: Text(
+                          'AESCION Edtech Solutions',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodySmall?.copyWith(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),

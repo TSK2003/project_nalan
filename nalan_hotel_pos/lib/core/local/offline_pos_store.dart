@@ -263,6 +263,33 @@ class OfflinePosStore {
     return _buildAuthPayload(user);
   }
 
+  Future<void> verifyLocalAuthPassword({
+    required int userId,
+    required String password,
+  }) async {
+    final trimmedPassword = password.trim();
+    if (trimmedPassword.isEmpty) {
+      throw const OfflineStoreException('Enter your password to continue');
+    }
+
+    final state = await _loadState();
+    final users = List<Map<String, dynamic>>.from(state['auth_users'] as List);
+    final user = users.cast<Map<String, dynamic>?>().firstWhere(
+      (item) => item?['id'] == userId && item?['is_active'] != false,
+      orElse: () => null,
+    );
+
+    if (user == null) {
+      throw const OfflineStoreException(
+        'Authenticated user account was not found',
+      );
+    }
+
+    if ((user['password']?.toString() ?? '') != trimmedPassword) {
+      throw const OfflineStoreException('Incorrect password');
+    }
+  }
+
   Future<List<Map<String, dynamic>>> getMenu({
     bool availableOnly = false,
   }) async {

@@ -706,7 +706,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen>
                     ),
           ),
           Container(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
+            padding: EdgeInsets.fromLTRB(14, 10, 14, 10 + bottomInset),
             decoration: BoxDecoration(
               color: Colors.white,
               boxShadow: [
@@ -720,35 +720,61 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen>
             child: Column(
               children: [
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     const Expanded(
                       child: Text(
                         'TOTAL',
                         style: TextStyle(
-                          fontSize: 20,
+                          fontSize: 17,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
                     Text(
                       AppFormatters.currencyExact(_billSubtotal),
                       style: TextStyle(
-                        fontSize: 20,
+                        fontSize: 18,
                         fontWeight: FontWeight.w900,
                         color: primaryColor,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                AppButton(
-                  text: 'PROCEED TO PAYMENT',
-                  onPressed: _currentBill.isEmpty ? () {} : _proceedToPayment,
-                  isLoading: _isCreatingBill,
-                  backgroundColor:
-                      _currentBill.isEmpty ? Colors.grey : primaryColor,
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: ElevatedButton(
+                    onPressed:
+                        _currentBill.isEmpty || _isCreatingBill
+                            ? null
+                            : _proceedToPayment,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor:
+                          _currentBill.isEmpty ? Colors.grey : primaryColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    child:
+                        _isCreatingBill
+                            ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                            : const Text('PROCEED TO PAYMENT'),
+                  ),
                 ),
               ],
             ),

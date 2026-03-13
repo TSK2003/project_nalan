@@ -111,6 +111,25 @@ class PosDataService {
     }
   }
 
+  Future<void> verifyUserPassword({
+    required int userId,
+    required String password,
+  }) async {
+    try {
+      if (isCloudMode) {
+        throw const PosDataException(
+          'Password confirmation for reset is not available in cloud mode yet',
+        );
+      }
+      await OfflinePosStore.instance.verifyLocalAuthPassword(
+        userId: userId,
+        password: password,
+      );
+    } catch (error) {
+      throw _error(error, fallback: 'Failed to verify password');
+    }
+  }
+
   Future<List<Map<String, dynamic>>> getMenu({
     bool availableOnly = false,
   }) async {

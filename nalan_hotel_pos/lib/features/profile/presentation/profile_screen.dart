@@ -371,7 +371,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (!mounted) {
       return;
     }
-    context.go('/login');
+    context.go('/');
   }
 
   Future<void> _saveProfile() async {
@@ -419,29 +419,114 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Future<void> _resetLocalSetup() async {
+    final authState = ref.read(authProvider);
+    final userId = authState.userId;
+    if (userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please sign in again before resetting local data'),
+        ),
+      );
+      return;
+    }
+
+    final passwordController = TextEditingController();
+    String? resetErrorMessage;
+    bool isVerifying = false;
     final shouldReset = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
-        return SafeArea(
-          child: AlertDialog(
-            title: const Text('Reset Local App Setup'),
-            content: const Text(
-              'This clears the saved store profile, menu, bills, and UPI setup on this device and returns the app to first-time setup.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('Cancel'),
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> confirmReset() async {
+              setDialogState(() {
+                isVerifying = true;
+                resetErrorMessage = null;
+              });
+              try {
+                await PosDataService.instance.verifyUserPassword(
+                  userId: userId,
+                  password: passwordController.text,
+                );
+                if (!dialogContext.mounted) {
+                  return;
+                }
+                Navigator.of(dialogContext).pop(true);
+              } catch (error) {
+                if (!dialogContext.mounted) {
+                  return;
+                }
+                setDialogState(() {
+                  isVerifying = false;
+                  resetErrorMessage = _errorMessage(
+                    error,
+                    fallback: 'Password verification failed',
+                  );
+                });
+              }
+            }
+
+            return SafeArea(
+              child: AlertDialog(
+                title: const Text('Reset Local App Setup'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'This clears the saved store profile, menu, bills, and UPI setup on this device and returns the app to first-time setup.',
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Confirm reset with your password',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 12),
+                    AppTextField(
+                      controller: passwordController,
+                      label: 'Enter Password',
+                      prefixIcon: Icons.lock_outline,
+                      obscureText: true,
+                    ),
+                    if (resetErrorMessage != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        resetErrorMessage!,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ],
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed:
+                        isVerifying
+                            ? null
+                            : () => Navigator.of(dialogContext).pop(false),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(
+                    onPressed: isVerifying ? null : confirmReset,
+                    child:
+                        isVerifying
+                            ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                            : const Text('Reset'),
+                  ),
+                ],
               ),
-              FilledButton(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
-                child: const Text('Reset'),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
+    passwordController.dispose();
 
     if (shouldReset != true) {
       return;
@@ -453,7 +538,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (!mounted) {
       return;
     }
-    context.go('/setup');
+    context.go('/');
   }
 
   @override
@@ -687,6 +772,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           onEdit: _showUpiAccountSheet,
                           onDelete: _deleteUpi,
                           onMakeDefault: _setDefaultUpi,
+                        ),
+                        const SizedBox(height: 16),
+                        Center(
+                          child: Text(
+                            'AESCION Edtech Solutions',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodySmall?.copyWith(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
                         ),
                       ],
                     ),
