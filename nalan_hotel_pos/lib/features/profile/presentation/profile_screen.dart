@@ -21,8 +21,6 @@ class StartupGateScreen extends ConsumerStatefulWidget {
 
 class _StartupGateScreenState extends ConsumerState<StartupGateScreen> {
   bool _navigated = false;
-  bool _isCheckingLogin = true;
-  bool _requiresLogin = false;
 
   @override
   void initState() {
@@ -33,21 +31,17 @@ class _StartupGateScreenState extends ConsumerState<StartupGateScreen> {
   Future<void> _initialize() async {
     await ref.read(storeProfileProvider.notifier).loadProfile();
     await ref.read(authProvider.notifier).checkAuth();
-    final requiresLogin = await PosDataService.instance.hasSavedLocalLogin();
     if (!mounted) {
       return;
     }
-    setState(() {
-      _requiresLogin = requiresLogin;
-      _isCheckingLogin = false;
-    });
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     final profile = ref.watch(storeProfileProvider);
     final authState = ref.watch(authProvider);
-    if (profile.isLoaded && !_isCheckingLogin && !_navigated) {
+    if (profile.isLoaded && !_navigated) {
       _navigated = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) {
@@ -57,7 +51,7 @@ class _StartupGateScreenState extends ConsumerState<StartupGateScreen> {
           context.go('/setup');
           return;
         }
-        if (_requiresLogin && !authState.isAuthenticated) {
+        if (!authState.isAuthenticated) {
           context.go('/login');
           return;
         }
@@ -86,15 +80,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _taglineController = TextEditingController();
   final _addressController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _loginMobileController = TextEditingController();
-  final _loginPasswordController = TextEditingController();
   final _logoPathController = TextEditingController();
   int _selectedColorValue = themeColorOptions.first.toARGB32();
   bool _initialized = false;
   bool _isSaving = false;
   bool _isLoadingUpiAccounts = true;
-  bool _hasSavedLogin = false;
-  String _savedLoginMobile = '';
   List<_UpiAccountData> _upiAccounts = [];
 
   @override
@@ -109,12 +99,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _taglineController.text = profile.tagline;
     _addressController.text = profile.address;
     _phoneController.text = profile.phone;
-    _loginMobileController.text = profile.loginMobileNumber;
     _logoPathController.text = profile.logoPath;
     _selectedColorValue = profile.primaryColorValue;
     _initialized = true;
     _loadUpiAccounts();
-    _loadLoginSettings();
   }
 
   @override
@@ -123,8 +111,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _taglineController.dispose();
     _addressController.dispose();
     _phoneController.dispose();
-    _loginMobileController.dispose();
-    _loginPasswordController.dispose();
     _logoPathController.dispose();
     super.dispose();
   }
@@ -176,31 +162,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ),
         ),
       );
-    }
-  }
-
-  Future<void> _loadLoginSettings() async {
-    try {
-      final savedLogin = await PosDataService.instance.getSavedLocalLogin();
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _hasSavedLogin = savedLogin != null;
-        _savedLoginMobile = savedLogin?['mobile_number'] as String? ?? '';
-        if (_loginMobileController.text.trim().isEmpty &&
-            _savedLoginMobile.isNotEmpty) {
-          _loginMobileController.text = _savedLoginMobile;
-        }
-      });
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _hasSavedLogin = false;
-        _savedLoginMobile = '';
-      });
     }
   }
 
@@ -410,38 +371,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (!mounted) {
       return;
     }
-    final hasLocalLogin = await PosDataService.instance.hasSavedLocalLogin();
-    if (!mounted) {
-      return;
-    }
-    context.go(hasLocalLogin ? '/login' : '/billing');
+    context.go('/login');
   }
 
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    final loginMobile = _loginMobileController.text.trim();
-    final loginPassword = _loginPasswordController.text.trim();
-    final loginMobileChanged =
-        loginMobile.isNotEmpty && loginMobile != _savedLoginMobile;
-    if (loginMobile.isEmpty && loginPassword.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Enter the login mobile number to save credentials'),
-        ),
-      );
-      return;
-    }
-    if (loginMobile.isNotEmpty &&
-        loginPassword.isEmpty &&
-        (!_hasSavedLogin || loginMobileChanged)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Enter the login password to save credentials'),
-        ),
-      );
       return;
     }
 
@@ -452,46 +386,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       tagline: _taglineController.text.trim(),
       address: _addressController.text.trim(),
       phone: _phoneController.text.trim(),
-      loginMobileNumber: loginMobile,
       logoPath: _logoPathController.text.trim(),
       primaryColorValue: _selectedColorValue,
     );
     try {
       await ref.read(storeProfileProvider.notifier).saveProfile(nextProfile);
-      if (loginMobile.isEmpty) {
-        await PosDataService.instance.clearLocalLogin();
-        _hasSavedLogin = false;
-        _savedLoginMobile = '';
-      } else if (loginPassword.isNotEmpty) {
-        await PosDataService.instance.saveLocalLogin(
-          mobileNumber: loginMobile,
-          password: loginPassword,
-          fullName: _hotelNameController.text.trim(),
-        );
-        _hasSavedLogin = true;
-        _savedLoginMobile = loginMobile;
-      }
 
       if (!mounted) {
         return;
       }
 
-      _loginPasswordController.clear();
       setState(() => _isSaving = false);
       if (widget.setupMode) {
-        context.go('/billing');
+        context.go('/login');
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            loginMobile.isEmpty
-                ? 'Store profile updated'
-                : 'Store profile and login saved',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Store profile updated')));
     } catch (e) {
       if (!mounted) {
         return;
@@ -588,42 +501,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         Align(
           alignment: Alignment.centerLeft,
           child: Text(
-            'App Login',
+            'App Access',
             style: Theme.of(context).textTheme.titleMedium,
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          'Save a mobile number and password to require login before opening billing screens.',
+          'Cashier accounts are now created from the login screen. Save the store profile here, then sign in or register from the auth page.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
-        const SizedBox(height: 16),
-        AppTextField(
-          controller: _loginMobileController,
-          label: 'Login Mobile Number',
-          prefixIcon: Icons.phone_android_outlined,
-          keyboardType: TextInputType.phone,
-        ),
-        const SizedBox(height: 16),
-        AppTextField(
-          controller: _loginPasswordController,
-          label:
-              _hasSavedLogin
-                  ? 'New Password (leave blank to keep current)'
-                  : 'Login Password',
-          prefixIcon: Icons.lock_outline,
-          obscureText: true,
-        ),
-        if (_hasSavedLogin) ...[
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Saved login: ${_savedLoginMobile.isEmpty ? 'Configured' : _savedLoginMobile}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-        ],
         const SizedBox(height: 16),
         AppTextField(
           controller: _logoPathController,
@@ -742,7 +628,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         const SizedBox(height: 8),
                         Text(
                           widget.setupMode
-                              ? 'Configure the store once, then start billing without a login screen.'
+                              ? 'Configure the store once, then continue to cashier sign in or registration.'
                               : 'Update the store identity so this app can be reused for another hotel or branch.',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),

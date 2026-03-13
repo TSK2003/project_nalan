@@ -455,11 +455,34 @@ class _MenuScreenState extends ConsumerState<MenuScreen>
           title: const Text('Menu Management'),
           bottom: TabBar(
             controller: _tabController,
-            isScrollable: true,
+            isScrollable: false,
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
             indicatorColor: Colors.white,
-            tabs: _categories.map((c) => Tab(text: c)).toList(),
+            labelStyle: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+            ),
+            unselectedLabelStyle: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+            ),
+            labelPadding: EdgeInsets.zero,
+            tabs:
+                _categories
+                    .map(
+                      (category) => Tab(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            category,
+                            maxLines: 1,
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
           ),
           actions: [
             IconButton(

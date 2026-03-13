@@ -79,55 +79,35 @@ class PosDataService {
     }
   }
 
-  Future<bool> hasSavedLocalLogin() async {
+  Future<bool> hasRegisteredUsers() async {
     try {
       if (isCloudMode) {
         return true;
       }
-      return OfflinePosStore.instance.hasLocalAuthUser();
+      return OfflinePosStore.instance.hasRegisteredAuthUsers();
     } catch (error) {
-      throw _error(error, fallback: 'Failed to load login settings');
+      throw _error(error, fallback: 'Failed to load user accounts');
     }
   }
 
-  Future<Map<String, dynamic>?> getSavedLocalLogin() async {
-    try {
-      if (isCloudMode) {
-        return null;
-      }
-      return OfflinePosStore.instance.getLocalAuthUser();
-    } catch (error) {
-      throw _error(error, fallback: 'Failed to load login settings');
-    }
-  }
-
-  Future<void> saveLocalLogin({
+  Future<void> registerUser({
     required String mobileNumber,
     required String password,
     String? fullName,
   }) async {
     try {
       if (isCloudMode) {
-        return;
+        throw const PosDataException(
+          'User registration is not available in cloud mode yet',
+        );
       }
-      await OfflinePosStore.instance.saveLocalAuthUser(
+      await OfflinePosStore.instance.registerLocalAuthUser(
         mobileNumber: mobileNumber,
         password: password,
         fullName: fullName,
       );
     } catch (error) {
-      throw _error(error, fallback: 'Failed to save login settings');
-    }
-  }
-
-  Future<void> clearLocalLogin() async {
-    try {
-      if (isCloudMode) {
-        return;
-      }
-      await OfflinePosStore.instance.clearLocalAuthUser();
-    } catch (error) {
-      throw _error(error, fallback: 'Failed to clear login settings');
+      throw _error(error, fallback: 'Failed to register user');
     }
   }
 

@@ -213,8 +213,8 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                           constraints.maxWidth,
                         );
                         final chartSize = (constraints.maxWidth *
-                                (constraints.maxWidth < 700 ? 0.72 : 0.34))
-                            .clamp(220.0, 320.0);
+                                (constraints.maxWidth < 700 ? 0.46 : 0.28))
+                            .clamp(150.0, 250.0);
 
                         return SingleChildScrollView(
                           padding: EdgeInsets.fromLTRB(
@@ -316,7 +316,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                                   return metricCards[index];
                                 },
                               ),
-                              const SizedBox(height: 24),
+                              const SizedBox(height: 18),
                               const Text(
                                 'Category Breakdown',
                                 style: TextStyle(
@@ -324,7 +324,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 10),
                               if ((_summary!['category_breakdown'] as Map)
                                   .isEmpty)
                                 const Text('No sales yet for today.')
@@ -336,7 +336,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                                     child: PieChart(
                                       PieChartData(
                                         sectionsSpace: 2,
-                                        centerSpaceRadius: chartSize * 0.18,
+                                        centerSpaceRadius: chartSize * 0.14,
                                         sections:
                                             (_summary!['category_breakdown']
                                                     as Map)
@@ -354,9 +354,12 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                                                     color: color,
                                                     value: pct,
                                                     title: '$pct%',
-                                                    radius: chartSize * 0.23,
-                                                    titleStyle: const TextStyle(
-                                                      fontSize: 12,
+                                                    radius: chartSize * 0.20,
+                                                    titleStyle: TextStyle(
+                                                      fontSize:
+                                                          chartSize < 180
+                                                              ? 10
+                                                              : 11,
                                                       fontWeight:
                                                           FontWeight.bold,
                                                       color: Colors.white,
@@ -368,27 +371,41 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                                     ),
                                   ),
                                 ),
-                                const SizedBox(height: 16),
+                                const SizedBox(height: 10),
                                 ...(_summary!['category_breakdown'] as Map)
                                     .entries
                                     .map((e) {
-                                      return ListTile(
-                                        contentPadding: EdgeInsets.zero,
-                                        leading: Container(
-                                          width: 16,
-                                          height: 16,
-                                          color: _getCategoryColor(e.key),
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 4,
                                         ),
-                                        title: Text(e.key),
-                                        trailing: Text(
-                                          AppFormatters.currencyExact(
-                                            double.parse(
-                                              e.value['total'].toString(),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 12,
+                                              height: 12,
+                                              color: _getCategoryColor(e.key),
                                             ),
-                                          ),
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                          ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Text(
+                                                e.key,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ),
+                                            Text(
+                                              AppFormatters.currencyExact(
+                                                double.parse(
+                                                  e.value['total'].toString(),
+                                                ),
+                                              ),
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       );
                                     }),

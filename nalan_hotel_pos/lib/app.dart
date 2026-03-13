@@ -12,58 +12,87 @@ import 'features/payment/presentation/payment_screen.dart';
 import 'features/profile/presentation/profile_screen.dart';
 import 'features/receipt/presentation/receipt_screen.dart';
 import 'features/summary/presentation/summary_screen.dart';
+import 'shared/providers/auth_state.dart';
 import 'shared/providers/store_profile.dart';
 
-final _router = GoRouter(
-  initialLocation: '/',
-  routes: [
-    GoRoute(path: '/', builder: (context, state) => const StartupGateScreen()),
-    GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
-    GoRoute(
-      path: '/setup',
-      builder: (context, state) => const ProfileScreen(setupMode: true),
-    ),
-    ShellRoute(
-      builder: (context, state, child) => MainShell(child: child),
-      routes: [
-        GoRoute(
-          path: '/billing',
-          builder: (context, state) => const NewBillScreen(),
-        ),
-        GoRoute(path: '/menu', builder: (context, state) => const MenuScreen()),
-        GoRoute(
-          path: '/history',
-          builder: (context, state) => const HistoryScreen(),
-        ),
-        GoRoute(
-          path: '/summary',
-          builder: (context, state) => const SummaryScreen(),
-        ),
-        GoRoute(
-          path: '/profile',
-          builder: (context, state) => const ProfileScreen(),
-        ),
-      ],
-    ),
-    GoRoute(
-      path: '/payment/:billId',
-      builder: (context, state) {
-        final billId = int.parse(state.pathParameters['billId']!);
-        return PaymentScreen(
-          billId: billId,
-          initialPaymentMode: state.uri.queryParameters['mode'],
-        );
-      },
-    ),
-    GoRoute(
-      path: '/receipt/:billId',
-      builder: (context, state) {
-        final billId = int.parse(state.pathParameters['billId']!);
-        return ReceiptScreen(billId: billId);
-      },
-    ),
-  ],
-);
+final appRouterProvider = Provider<GoRouter>((ref) {
+  final profile = ref.watch(storeProfileProvider);
+  final auth = ref.watch(authProvider);
+
+  return GoRouter(
+    initialLocation: '/',
+    redirect: (context, state) {
+      final location = state.matchedLocation;
+      final isRoot = location == '/';
+      final isSetup = location == '/setup';
+      final isLogin = location == '/login';
+
+      if (!profile.isConfigured) {
+        return isSetup ? null : '/setup';
+      }
+
+      if (!auth.isAuthenticated) {
+        return isLogin ? null : '/login';
+      }
+
+      if (isRoot || isSetup || isLogin) {
+        return '/billing';
+      }
+
+      return null;
+    },
+    routes: [
+      GoRoute(path: '/', builder: (context, state) => const _RouterSplash()),
+      GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
+      GoRoute(
+        path: '/setup',
+        builder: (context, state) => const ProfileScreen(setupMode: true),
+      ),
+      ShellRoute(
+        builder: (context, state, child) => MainShell(child: child),
+        routes: [
+          GoRoute(
+            path: '/billing',
+            builder: (context, state) => const NewBillScreen(),
+          ),
+          GoRoute(
+            path: '/menu',
+            builder: (context, state) => const MenuScreen(),
+          ),
+          GoRoute(
+            path: '/history',
+            builder: (context, state) => const HistoryScreen(),
+          ),
+          GoRoute(
+            path: '/summary',
+            builder: (context, state) => const SummaryScreen(),
+          ),
+          GoRoute(
+            path: '/profile',
+            builder: (context, state) => const ProfileScreen(),
+          ),
+        ],
+      ),
+      GoRoute(
+        path: '/payment/:billId',
+        builder: (context, state) {
+          final billId = int.parse(state.pathParameters['billId']!);
+          return PaymentScreen(
+            billId: billId,
+            initialPaymentMode: state.uri.queryParameters['mode'],
+          );
+        },
+      ),
+      GoRoute(
+        path: '/receipt/:billId',
+        builder: (context, state) {
+          final billId = int.parse(state.pathParameters['billId']!);
+          return ReceiptScreen(billId: billId);
+        },
+      ),
+    ],
+  );
+});
 
 class NalanHotelApp extends ConsumerWidget {
   const NalanHotelApp({super.key});
@@ -72,6 +101,7 @@ class NalanHotelApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(storeProfileProvider);
     final primaryColor = profile.primaryColor;
+    final router = ref.watch(appRouterProvider);
 
     return MaterialApp.router(
       title: profile.hotelName,
@@ -143,7 +173,18 @@ class NalanHotelApp extends ConsumerWidget {
         ),
         useMaterial3: true,
       ),
-      routerConfig: _router,
+      routerConfig: router,
+    );
+  }
+}
+
+class _RouterSplash extends StatelessWidget {
+  const _RouterSplash();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SafeArea(
+      child: Scaffold(body: Center(child: CircularProgressIndicator())),
     );
   }
 }

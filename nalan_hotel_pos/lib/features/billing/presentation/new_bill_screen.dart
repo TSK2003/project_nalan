@@ -588,21 +588,35 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen>
           color: primaryColor,
           child: TabBar(
             controller: _tabController,
-            isScrollable: true,
+            isScrollable: false,
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
             indicatorColor: Colors.white,
             dividerColor: Colors.transparent,
             labelStyle: const TextStyle(
-              fontSize: 12,
+              fontSize: 10,
               fontWeight: FontWeight.w700,
             ),
             unselectedLabelStyle: const TextStyle(
-              fontSize: 12,
+              fontSize: 10,
               fontWeight: FontWeight.w500,
             ),
-            labelPadding: const EdgeInsets.symmetric(horizontal: 14),
-            tabs: _categories.map((category) => Tab(text: category)).toList(),
+            labelPadding: EdgeInsets.zero,
+            tabs:
+                _categories
+                    .map(
+                      (category) => Tab(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            category,
+                            maxLines: 1,
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
           ),
         ),
         Expanded(

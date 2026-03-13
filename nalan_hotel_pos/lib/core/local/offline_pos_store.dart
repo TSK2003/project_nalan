@@ -153,22 +153,33 @@ class OfflinePosStore {
     return 'BILL-$datePrefix-${sequence.toString().padLeft(4, '0')}';
   }
 
-  Future<Map<String, dynamic>?> getLocalAuthUser() async {
-    final state = await _loadState();
-    final users = List<Map<String, dynamic>>.from(state['auth_users'] as List);
-    final user = users.cast<Map<String, dynamic>?>().firstWhere(
-      (item) => item?['is_active'] == true,
-      orElse: () => null,
+  List<Map<String, dynamic>> _registeredAuthUsers(Map<String, dynamic> state) {
+    return List<Map<String, dynamic>>.from(
+      (state['auth_users'] as List).where(
+        (user) => (user as Map<String, dynamic>)['is_active'] != false,
+      ),
     );
-    return user == null ? null : _copyJsonMap(user);
   }
 
-  Future<bool> hasLocalAuthUser() async {
-    final user = await getLocalAuthUser();
-    return user != null;
+  Map<String, dynamic> _buildAuthPayload(Map<String, dynamic> user) {
+    final displayName =
+        (user['full_name'] as String?)?.trim().isNotEmpty == true
+            ? user['full_name']
+            : user['mobile_number'];
+    return {
+      'token': 'offline-${DateTime.now().millisecondsSinceEpoch}',
+      'refresh_token': 'offline-refresh-token',
+      'cashier_name': displayName,
+      'user_id': user['id'] as int? ?? 1,
+    };
   }
 
-  Future<Map<String, dynamic>> saveLocalAuthUser({
+  Future<bool> hasRegisteredAuthUsers() async {
+    final state = await _loadState();
+    return _registeredAuthUsers(state).isNotEmpty;
+  }
+
+  Future<Map<String, dynamic>> registerLocalAuthUser({
     required String mobileNumber,
     required String password,
     String? fullName,
@@ -187,49 +198,37 @@ class OfflinePosStore {
     final state = await _loadState();
     final users = List<Map<String, dynamic>>.from(state['auth_users'] as List);
     final now = DateTime.now().toIso8601String();
-    final index = users.indexWhere((user) => user['is_active'] == true);
-
-    late final Map<String, dynamic> savedUser;
-    if (index == -1) {
-      savedUser = {
-        'id': state['next_user_id'] as int,
-        'mobile_number': trimmedMobile,
-        'password': trimmedPassword,
-        'full_name': (fullName ?? '').trim(),
-        'is_active': true,
-        'created_at': now,
-        'updated_at': now,
-      };
-      users.add(savedUser);
-      state['next_user_id'] = (state['next_user_id'] as int) + 1;
-    } else {
-      savedUser = {
-        ...users[index],
-        'mobile_number': trimmedMobile,
-        'password': trimmedPassword,
-        'full_name':
-            (fullName ?? users[index]['full_name']?.toString() ?? '').trim(),
-        'updated_at': now,
-      };
-      users[index] = savedUser;
+    final existingUserIndex = users.indexWhere(
+      (user) =>
+          user['is_active'] != false &&
+          (user['mobile_number']?.toString() ?? '') == trimmedMobile,
+    );
+    if (existingUserIndex != -1) {
+      throw const OfflineStoreException(
+        'An account already exists with this mobile number',
+      );
     }
 
+    final savedUser = {
+      'id': state['next_user_id'] as int,
+      'mobile_number': trimmedMobile,
+      'password': trimmedPassword,
+      'full_name': (fullName ?? '').trim(),
+      'is_active': true,
+      'created_at': now,
+      'updated_at': now,
+      'last_login_at': null,
+    };
+    users.add(savedUser);
+    state['next_user_id'] = (state['next_user_id'] as int) + 1;
     state['auth_users'] = users;
     await _saveState(state);
     return _copyJsonMap(savedUser);
   }
 
-  Future<void> clearLocalAuthUser() async {
+  Future<void> clearLocalAuthUsers() async {
     final state = await _loadState();
-    final users = List<Map<String, dynamic>>.from(state['auth_users'] as List);
-    if (users.isEmpty) {
-      return;
-    }
-    final now = DateTime.now().toIso8601String();
-    for (var i = 0; i < users.length; i++) {
-      users[i] = {...users[i], 'is_active': false, 'updated_at': now};
-    }
-    state['auth_users'] = users;
+    state['auth_users'] = <Map<String, dynamic>>[];
     await _saveState(state);
   }
 
@@ -237,27 +236,31 @@ class OfflinePosStore {
     required String mobileNumber,
     required String password,
   }) async {
-    final user = await getLocalAuthUser();
-    if (user == null) {
+    final trimmedMobile = mobileNumber.trim();
+    final trimmedPassword = password.trim();
+    final state = await _loadState();
+    final users = List<Map<String, dynamic>>.from(state['auth_users'] as List);
+    final registeredUsers = _registeredAuthUsers(state);
+    if (registeredUsers.isEmpty) {
       throw const OfflineStoreException(
-        'Set mobile login credentials in Store Profile first',
+        'No user account found. Register a new user first',
       );
     }
-
-    if (user['mobile_number'] != mobileNumber.trim() ||
-        user['password'] != password) {
+    final userIndex = users.indexWhere(
+      (user) =>
+          user['is_active'] != false &&
+          (user['mobile_number']?.toString() ?? '') == trimmedMobile,
+    );
+    if (userIndex == -1 ||
+        (users[userIndex]['password']?.toString() ?? '') != trimmedPassword) {
       throw const OfflineStoreException('Invalid mobile number or password');
     }
-
-    return {
-      'token': 'offline-${DateTime.now().millisecondsSinceEpoch}',
-      'refresh_token': 'offline-refresh-token',
-      'cashier_name':
-          (user['full_name'] as String?)?.trim().isNotEmpty == true
-              ? user['full_name']
-              : user['mobile_number'],
-      'user_id': user['id'] as int? ?? 1,
-    };
+    final now = DateTime.now().toIso8601String();
+    final user = {...users[userIndex], 'updated_at': now, 'last_login_at': now};
+    users[userIndex] = user;
+    state['auth_users'] = users;
+    await _saveState(state);
+    return _buildAuthPayload(user);
   }
 
   Future<List<Map<String, dynamic>>> getMenu({
